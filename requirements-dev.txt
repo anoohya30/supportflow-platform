@@ -1,0 +1,5 @@
+# Extra tools for development and testing (not shipped in the container).
+-r requirements.txt
+pytest==9.1.1
+httpx==0.28.1
+ruff==0.16.10

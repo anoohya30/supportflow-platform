@@ -1,0 +1,36 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0 -- /home/anoo/projects/supportflow-platform/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/anoo/projects/supportflow-platform
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.1
+collecting ... collected 19 items
+
+tests/test_operations.py::test_liveness_is_ok PASSED                     [  5%]
+tests/test_operations.py::test_readiness_is_ok_when_database_is_up PASSED [ 10%]
+tests/test_operations.py::test_readiness_returns_503_but_liveness_stays_ok_when_database_is_down PASSED [ 15%]
+tests/test_operations.py::test_version_reports_release_and_commit PASSED [ 21%]
+tests/test_operations.py::test_metrics_exposes_requests_latency_and_errors PASSED [ 26%]
+tests/test_operations.py::test_logs_are_json_and_exclude_ticket_text PASSED [ 31%]
+tests/test_tickets.py::test_create_ticket_returns_201_with_id_and_timestamp PASSED [ 36%]
+tests/test_tickets.py::test_create_ticket_rejects_invalid_input_with_422[payload0] PASSED [ 42%]
+tests/test_tickets.py::test_create_ticket_rejects_invalid_input_with_422[payload1] PASSED [ 47%]
+tests/test_tickets.py::test_create_ticket_rejects_invalid_input_with_422[payload2] PASSED [ 52%]
+tests/test_tickets.py::test_create_ticket_rejects_invalid_input_with_422[payload3] PASSED [ 57%]
+tests/test_tickets.py::test_create_ticket_rejects_invalid_input_with_422[payload4] PASSED [ 63%]
+tests/test_tickets.py::test_get_ticket_returns_stored_ticket PASSED      [ 68%]
+tests/test_tickets.py::test_get_missing_ticket_returns_404 PASSED        [ 73%]
+tests/test_tickets.py::test_patch_updates_status PASSED                  [ 78%]
+tests/test_tickets.py::test_patch_rejects_invalid_status_with_422 PASSED [ 84%]
+tests/test_tickets.py::test_patch_missing_ticket_returns_404 PASSED      [ 89%]
+tests/test_tickets.py::test_list_is_paginated PASSED                     [ 94%]
+tests/test_tickets.py::test_list_has_a_maximum_page_size PASSED          [100%]
+
+=============================== warnings summary ===============================
+.venv/lib/python3.14/site-packages/fastapi/testclient.py:1
+  /home/anoo/projects/supportflow-platform/.venv/lib/python3.14/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 19 passed, 1 warning in 2.26s =========================

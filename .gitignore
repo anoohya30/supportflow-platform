@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets and local settings: NEVER commit these
+.env
+*.pem
+*.key
+
+# Terraform (state and plans can contain secrets)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+# Note: .terraform.lock.hcl SHOULD be committed (the brief requires it).
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
