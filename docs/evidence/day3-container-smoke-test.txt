@@ -1,0 +1,14 @@
+[PASS] GET  /health/live                      expected 200, got 200
+[PASS] GET  /health/ready                     expected 200, got 200
+[PASS] GET  /version                          expected 200, got 200
+       version info: {'version': '0.1.0-local', 'commit': 'unknown'}
+[PASS] POST /tickets (valid)                  expected 201, got 201
+[PASS] POST /tickets (invalid priority)       expected 422, got 422
+[PASS] GET  /tickets/1005                     expected 200, got 200
+[PASS] PATCH /tickets/1005 -> closed          expected 200, got 200
+[PASS] GET  /tickets/999999999 (missing)      expected 404, got 404
+[PASS] GET  /tickets?limit=5                  expected 200, got 200
+       total tickets in database: 1005
+[PASS] GET  /metrics                          expected 200, got 200
+
+ALL CHECKS PASSED
