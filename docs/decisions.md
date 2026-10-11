@@ -139,3 +139,32 @@ The brief requires k3s on EC2 anyway, so the assessed environment is unchanged.
 
 **Trade-off:** Kubernetes mistakes are found on AWS instead of locally. Reduced by
 `helm lint` / `helm template` checks and by deploying to staging before production-lab.
+
+---
+
+## D-010: Two-stage, non-root container image
+*Status: Accepted · 2026-10-11*
+
+**Decision:** The Dockerfile uses a builder stage to install libraries and a clean
+final stage with only the libraries and app code. The app runs as user 10001 (not root).
+
+**Why:** Smaller image with no build tools, and less damage possible if the app is
+compromised. Proven locally: `docker exec ... id` shows `uid=10001(app)`.
+
+**Trade-off:** The base image is a version tag (`python:3.13-slim`), not a fixed digest,
+so it can change between builds. The CI vulnerability scan checks every build.
+
+---
+
+## D-011: CI with pinned actions and security gates
+*Status: Accepted · 2026-10-11*
+
+**Decision:** GitHub Actions runs lint, migration check, tests, a gitleaks secret scan
+and a Trivy image scan on every pull request. Third-party actions are pinned to exact
+commit SHAs. The workflow has read-only permissions and uses no secrets.
+
+**Why:** Required by the brief. Pinning by SHA stops a changed action from silently
+running different code.
+
+**Trade-off:** The image is built but not pushed yet; pushing to ECR via GitHub OIDC is
+added when the AWS infrastructure exists (Day 4).

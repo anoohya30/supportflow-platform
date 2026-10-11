@@ -1,0 +1,22 @@
+# Files Docker must NOT copy into the image.
+# Keeps the image small and stops secrets or local junk leaking in.
+.git
+.github
+.venv
+venv
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+*.pem
+*.key
+tests/
+docs/
+scripts/
+infra/
+charts/
+gitops/
+load-tests/
+docker-compose.yml
+requirements-dev.txt
