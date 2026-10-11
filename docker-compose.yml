@@ -1,0 +1,25 @@
+# Local development database. Run: docker compose up -d
+#
+# This is ONLY for your laptop. The password below is a throwaway local value;
+# real environments get their credentials from AWS Secrets Manager (Day 3+).
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: supportflow-db
+    environment:
+      POSTGRES_USER: supportflow
+      POSTGRES_PASSWORD: supportflow
+      POSTGRES_DB: supportflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/create-test-db.sql:/docker-entrypoint-initdb.d/create-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supportflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

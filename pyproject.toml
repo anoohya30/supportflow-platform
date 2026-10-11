@@ -1,0 +1,24 @@
+[project]
+name = "supportflow"
+version = "0.1.0"
+description = "SupportFlow support-ticket API (DevOps portfolio assessment project)"
+requires-python = ">=3.12"
+
+# Linting and formatting: ruff check . && ruff format --check .
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/W = style errors, F = real bugs (unused names, etc.), I = import order,
+# B = common bug patterns, UP = modern Python syntax.
+select = ["E", "W", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's recommended Depends()/Query() style triggers B008 falsely.
+"app/main.py" = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+filterwarnings = ["ignore::DeprecationWarning"]
