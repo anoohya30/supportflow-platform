@@ -145,3 +145,4 @@ def version():
 @app.get("/metrics")
 def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+import json  # DELIBERATE ERROR: unused import to prove CI blocks merging
