@@ -1,0 +1,27 @@
+{{- if .Values.networkPolicy.enabled }}
+# Only the ingress controller (Traefik, in kube-system) and the node itself
+# (for health probes) may reach the API pods. Everything else is denied.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "supportflow.fullname" . }}-allow-ingress
+  labels:
+    {{- include "supportflow.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "supportflow.selectorLabels" . | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        {{- range .Values.networkPolicy.nodeCidrs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+{{- end }}

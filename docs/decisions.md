@@ -168,3 +168,44 @@ running different code.
 
 **Trade-off:** The image is built but not pushed yet; pushing to ECR via GitHub OIDC is
 added when the AWS infrastructure exists (Day 4).
+
+---
+
+## D-012: Admin access through AWS Session Manager, not SSH
+*Status: Accepted · 2026-10-12*
+
+**Decision:** The lab host has no SSH, Kubernetes API or database port open.
+Operators connect with `aws ssm start-session`. Only port 80 (the app) is public.
+
+**Why:** No exposed login port, no SSH keys, works when the operator's IP changes,
+and every session is authenticated by IAM. This is the "authenticated tunnel" in the brief.
+
+**Trade-off:** Needs the Session Manager plugin locally and the SSM agent on the host.
+
+---
+
+## D-013: Same image digest promoted from staging to production-lab
+*Status: Accepted · 2026-10-12*
+
+**Decision:** CI builds the image once, scans it, and (on `main` only) pushes it to an
+immutable-tag ECR repo using GitHub OIDC. Deployments always use `repository@sha256:digest`;
+the deploy script refuses tags. Production-lab gets the exact digest that passed staging.
+
+**Why:** "Build once, promote" means what was tested is exactly what runs.
+
+**Trade-off:** Promotion is a manual script run through Session Manager, not GitOps.
+Argo CD reconciliation and a reviewer-enforced promotion gate are not completed.
+
+---
+
+## D-014: Migrations as a Helm pre-install/pre-upgrade Job
+*Status: Accepted · 2026-10-12*
+
+**Decision:** `alembic upgrade head` runs once in a Helm hook Job before the API rolls out,
+never at replica startup. The rolling update keeps both old pods until a new one is Ready
+(`maxUnavailable: 0`).
+
+**Why:** Avoids two replicas racing to migrate, and a failed migration stops the release
+before any API pod changes.
+
+**Trade-off:** A failed hook blocks the release until fixed (intended).

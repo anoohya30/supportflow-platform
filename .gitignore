@@ -24,3 +24,6 @@ crash.log
 .vscode/
 .idea/
 .DS_Store
+
+# CI scratch output
+rendered/

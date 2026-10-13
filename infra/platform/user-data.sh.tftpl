@@ -1,0 +1,86 @@
+#!/bin/bash
+# SupportFlow lab host first-boot script (rendered by Terraform).
+# Progress log: /var/log/supportflow-bootstrap.log
+# Finished marker: /var/lib/supportflow-ready
+set -euxo pipefail
+exec > >(tee -a /var/log/supportflow-bootstrap.log) 2>&1
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y curl git unzip jq ca-certificates postgresql-client
+
+# --- AWS CLI v2 (used to log in to ECR with the host's IAM role) ---
+curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q -o /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install --update
+
+# --- k3s (pinned version) ---
+curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${k3s_version}" sh -s - --write-kubeconfig-mode 0600
+
+# --- Helm (pinned version) ---
+curl -sSL "https://get.helm.sh/helm-${helm_version}-linux-amd64.tar.gz" | tar xz -C /tmp
+install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
+
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+echo 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml' > /etc/profile.d/kubeconfig.sh
+
+# Wait until Kubernetes is up.
+for i in $(seq 1 60); do
+  if kubectl get nodes >/dev/null 2>&1; then break; fi
+  sleep 5
+done
+kubectl wait --for=condition=Ready node --all --timeout=300s
+
+# --- The two environments ---
+for ns in staging production-lab; do
+  kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f -
+done
+
+# --- ECR image-pull secret (ECR passwords expire after 12h, so refresh) ---
+cat > /usr/local/bin/refresh-ecr-secret <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+REGISTRY="${ecr_registry}"
+REGION="${region}"
+PASS=$(aws ecr get-login-password --region "$REGION")
+for ns in staging production-lab; do
+  kubectl create secret docker-registry ecr-pull \
+    --namespace "$ns" \
+    --docker-server="$REGISTRY" \
+    --docker-username=AWS \
+    --docker-password="$PASS" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+done
+echo "ECR pull secret refreshed at $(date -u +%FT%TZ)"
+SCRIPT
+chmod 0750 /usr/local/bin/refresh-ecr-secret
+
+cat > /etc/systemd/system/refresh-ecr-secret.service <<'UNIT'
+[Unit]
+Description=Refresh the ECR image-pull secret in staging and production-lab
+After=k3s.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/refresh-ecr-secret
+UNIT
+
+cat > /etc/systemd/system/refresh-ecr-secret.timer <<'UNIT'
+[Unit]
+Description=Refresh the ECR image-pull secret every 6 hours
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=6h
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now refresh-ecr-secret.timer
+/usr/local/bin/refresh-ecr-secret
+
+touch /var/lib/supportflow-ready
+echo "SupportFlow host bootstrap complete"

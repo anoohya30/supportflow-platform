@@ -1,0 +1,25 @@
+# Infrastructure security scan settings (used by CI).
+# Every skipped check is an ACCEPTED LAB EXCEPTION with a reason, owner and
+# expiry in docs/security-exceptions.md. Any NEW finding fails the build.
+compact: true
+quiet: true
+skip-check:
+  # --- AWS (Terraform) ---
+  - CKV_AWS_126   # EC2 detailed monitoring (cost)
+  - CKV_AWS_394   # AZ data source pinning (single-AZ lab)
+  - CKV_AWS_130   # public IP on subnet (no NAT gateway: cost)
+  - CKV_AWS_260   # port 80 open to internet (intended app ingress; no TLS yet)
+  - CKV_AWS_136   # ECR KMS encryption (AES256 used instead)
+  - CKV_AWS_145   # S3 KMS encryption (AES256 used instead)
+  - CKV2_AWS_62   # S3 event notifications (not needed for lab)
+  - CKV2_AWS_11   # VPC flow logs (cost)
+  - CKV_AWS_18    # S3 access logging (cost)
+  - CKV_AWS_144   # S3 cross-region replication (cost)
+  # --- Kubernetes ---
+  - CKV_K8S_21    # default namespace (false positive: deployed into staging/production-lab)
+  - CKV_K8S_35    # DB URL from Secret as env var (app reads env)
+  - CKV_K8S_43    # postgres image by tag not digest (app image IS by digest)
+  - CKV_K8S_15    # imagePullPolicy Always (digest-pinned images make IfNotPresent safe)
+  - CKV_K8S_22    # read-only root FS for postgres (database must write)
+  - CKV_K8S_40    # postgres UID 70 (official image user)
+  - CKV2_K8S_6    # false positive: postgres NetworkPolicy is in the same file

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: supportflow
+description: SupportFlow ticket API (FastAPI) for the k3s lab host
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
