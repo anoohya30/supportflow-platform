@@ -1,0 +1,48 @@
+{{- if .Values.migration.enabled }}
+# Runs database migrations ONCE before each install/upgrade
+# (a Helm "hook"), instead of on every replica start.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "supportflow.fullname" . }}-migrate
+  labels:
+    {{- include "supportflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        {{- include "supportflow.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "supportflow.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ required "image.ref is required (repository@sha256:digest)" .Values.image.ref | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["alembic", "upgrade", "head"]
+          env:
+            {{- include "supportflow.env" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            {{- include "supportflow.containerSecurityContext" . | nindent 12 }}
+{{- end }}

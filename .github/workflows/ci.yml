@@ -4,13 +4,17 @@
 # Jobs:
 #   1. lint-and-test  - code style, database migration check, 19 tests
 #   2. secret-scan    - fails if a password/key is found in the code or history
-#   3. build-and-scan - builds the Docker image and fails on fixable CRITICAL
-#                       vulnerabilities
+#   3. iac-checks     - Terraform format/validate, Helm lint, Kubernetes schema
+#                       validation, infrastructure security scan (checkov)
+#   4. build-and-scan - builds the Docker image ONCE, checks non-root, fails on
+#                       fixable CRITICAL vulnerabilities, makes an SBOM.
+#                       On main only: pushes that same image to ECR (via OIDC)
+#                       and records its immutable digest.
 #
 # Security rules from the brief:
 #   - third-party actions are pinned to an exact commit SHA (immutable)
-#   - the workflow only gets read access to the repository
-#   - no cloud credentials or secrets are used here
+#   - minimal permissions per job; no stored AWS keys (GitHub OIDC instead)
+#   - pull requests can never push images: the AWS role only trusts main
 
 name: CI
 
@@ -23,10 +27,12 @@ on:
 permissions:
   contents: read
 
-# If you push again to the same PR, cancel the old run.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  AWS_REGION: eu-west-2
 
 jobs:
   lint-and-test:
@@ -34,7 +40,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
-    # A throwaway PostgreSQL database just for this job.
     services:
       postgres:
         image: postgres:16-alpine
@@ -97,11 +102,68 @@ jobs:
           curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar xz gitleaks
           ./gitleaks git . --redact --verbose
 
+  iac-checks:
+    name: Infrastructure checks (Terraform, Helm, Kubernetes)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.16.5"
+
+      - name: Terraform format check
+        run: terraform fmt -check -recursive -diff infra
+
+      - name: Terraform validate (bootstrap and platform)
+        run: |
+          for dir in infra/bootstrap infra/platform; do
+            echo "== $dir"
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+          done
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.22.0
+
+      - name: Helm lint and render both environments
+        run: |
+          TEST_IMAGE="123456789012.dkr.ecr.eu-west-2.amazonaws.com/supportflow@sha256:$(printf 'a%.0s' {1..64})"
+          mkdir -p rendered
+          for env in staging production-lab; do
+            helm lint charts/supportflow -f "charts/supportflow/values-$env.yaml" \
+              --set image.ref="$TEST_IMAGE" --set ingress.host="$env.example.test"
+            helm template supportflow charts/supportflow --namespace "$env" \
+              -f "charts/supportflow/values-$env.yaml" \
+              --set image.ref="$TEST_IMAGE" --set ingress.host="$env.example.test" \
+              > "rendered/$env.yaml"
+          done
+          cp k8s/postgres.yaml rendered/
+
+      - name: Kubernetes schema validation (kubeconform)
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          ./kubeconform -strict -summary -kubernetes-version 1.33.0 rendered/
+
+      - name: Infrastructure security scan (checkov)
+        run: |
+          pip install --quiet checkov==3.3.28
+          checkov -d infra --framework terraform --config-file .checkov.yaml
+          checkov -d rendered --framework kubernetes --config-file .checkov.yaml
+
   build-and-scan:
     name: Build image and scan for vulnerabilities
     needs: lint-and-test
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # lets main-branch runs get a short-lived AWS token (OIDC)
     steps:
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -109,7 +171,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Build image (not pushed yet - ECR comes later)
+      - name: Build image ONCE (tagged with the commit SHA)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -133,3 +195,59 @@ jobs:
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+
+      - name: Generate SBOM (CycloneDX)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: supportflow:${{ github.sha }}
+          format: cyclonedx
+          output: sbom.cdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.cdx.json
+
+      # ---------- main branch only: publish the SAME tested image ----------
+      - name: Get AWS credentials via OIDC (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Push the tested image to ECR and record its digest (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+        run: |
+          set -euo pipefail
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          REGISTRY="$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com"
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+          docker tag "supportflow:$GITHUB_SHA" "$REGISTRY/supportflow:$GITHUB_SHA"
+          docker push "$REGISTRY/supportflow:$GITHUB_SHA"
+          DIGEST_REF=$(docker inspect --format='{{index .RepoDigests 0}}' "$REGISTRY/supportflow:$GITHUB_SHA")
+          cat > release-record.json <<JSON
+          {
+            "commit": "$GITHUB_SHA",
+            "version": "0.1.0",
+            "image": "$DIGEST_REF",
+            "workflow_run": "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID",
+            "built_at": "$(date -u +%FT%TZ)"
+          }
+          JSON
+          {
+            echo "### Image published"
+            echo "Deploy this exact artifact to staging and production-lab:"
+            echo '```'
+            echo "$DIGEST_REF"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release record (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-record-${{ github.sha }}
+          path: release-record.json

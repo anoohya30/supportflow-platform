@@ -1,0 +1,3 @@
+# Production-lab: receives the SAME image digest after staging passes.
+environment: production-lab
+replicaCount: 2

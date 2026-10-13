@@ -1,0 +1,73 @@
+# Default settings for the SupportFlow chart.
+# Environment-specific settings live in values-staging.yaml and
+# values-production-lab.yaml. The image is ALWAYS set at deploy time by
+# digest, so staging and production-lab run the exact same artifact.
+
+environment: lab
+
+replicaCount: 2
+
+image:
+  # Full immutable reference, e.g.
+  # 123456789012.dkr.ecr.eu-west-2.amazonaws.com/supportflow@sha256:abc...
+  ref: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ecr-pull
+
+# Shown by GET /version and in every log line.
+release:
+  version: "0.1.0"
+  commit: "unknown"
+
+# The database URL is read from a Kubernetes Secret created at deploy time
+# (never stored in Git).
+database:
+  secretName: supportflow-db
+  urlKey: database-url
+
+service:
+  port: 80
+  targetPort: 8000
+
+ingress:
+  enabled: true
+  className: traefik
+  host: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+probes:
+  startup:
+    path: /health/live
+    periodSeconds: 3
+    failureThreshold: 20
+  liveness:
+    path: /health/live
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    path: /health/ready
+    periodSeconds: 5
+    failureThreshold: 2
+
+migration:
+  # Runs "alembic upgrade head" ONCE as a Job before each install/upgrade,
+  # not on every replica start.
+  enabled: true
+  backoffLimit: 2
+
+networkPolicy:
+  enabled: true
+  # The node (kubelet health probes) reaches pods from these addresses on k3s:
+  # 10.42.0.1 = the node's address on the pod network, 10.20.0.0/16 = the VPC.
+  nodeCidrs:
+    - 10.42.0.1/32
+    - 10.20.0.0/16
