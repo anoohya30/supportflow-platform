@@ -209,3 +209,17 @@ never at replica startup. The rolling update keeps both old pods until a new one
 before any API pod changes.
 
 **Trade-off:** A failed hook blocks the release until fixed (intended).
+
+---
+
+## D-015: m7i-flex.large instead of t3.large (AWS Free plan)
+*Status: Accepted · 2026-10-14*
+
+**Decision:** The lab host uses `m7i-flex.large` (2 vCPU, 8 GB) instead of `t3.large`.
+
+**Why:** The lab AWS account is on the AWS Free plan (credits, 6 months). `t3.large` is not
+Free-plan eligible; `m7i-flex.large` is, and has the same 8 GB memory needed for k3s plus
+staging and production-lab. Usage is paid from Free plan credits, not a card.
+
+**Trade-off:** Free plan credits are limited, so the platform is torn down at the end of the
+review window (runbook 6). A real service would size from load-test results instead.
