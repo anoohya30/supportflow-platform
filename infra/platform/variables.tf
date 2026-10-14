@@ -17,9 +17,9 @@ variable "github_repository" {
 }
 
 variable "instance_type" {
-  description = "EC2 size. t3.large = 2 vCPU / 8 GB: fits k3s + two environments"
+  description = "EC2 size. m7i-flex.large = 2 vCPU / 8 GB, AWS Free plan eligible: fits k3s + two environments"
   type        = string
-  default     = "t3.large"
+  default     = "m7i-flex.large"
 }
 
 variable "k3s_version" {
