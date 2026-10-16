@@ -89,7 +89,7 @@ resource "aws_iam_role" "github_ecr_push" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub" = local.github_oidc_subject
         }
       }
     }]
@@ -124,4 +124,13 @@ resource "aws_iam_role_policy" "github_ecr_push" {
       },
     ]
   })
+}
+
+# GitHub's OIDC "sub" claim for repositories created after 15 July 2026
+# includes immutable numeric IDs (names can be reused, IDs cannot):
+#   repo:<owner>@<owner_id>/<repo>@<repo_id>:ref:refs/heads/main
+locals {
+  github_owner        = split("/", var.github_repository)[0]
+  github_repo         = split("/", var.github_repository)[1]
+  github_oidc_subject = "repo:${local.github_owner}@${var.github_owner_id}/${local.github_repo}@${var.github_repo_id}:ref:refs/heads/main"
 }
