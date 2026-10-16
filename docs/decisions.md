@@ -223,3 +223,20 @@ staging and production-lab. Usage is paid from Free plan credits, not a card.
 
 **Trade-off:** Free plan credits are limited, so the platform is torn down at the end of the
 review window (runbook 6). A real service would size from load-test results instead.
+
+---
+
+## D-016: Trust GitHub's immutable OIDC subject
+*Status: Accepted · 2026-10-16*
+
+**Decision:** The ECR push role trusts the OIDC subject
+`repo:anoohya30@262563569/supportflow-platform@1413030078:ref:refs/heads/main`
+(owner and repository numeric IDs), not the legacy name-only subject.
+
+**Why:** The first push to `main` failed with `Not authorized to perform
+sts:AssumeRoleWithWebIdentity`. Repositories created after 15 July 2026 receive GitHub's
+immutable subject format; this repository was created on 2026-10-10. Numeric IDs cannot
+be reused, so a deleted-and-recreated repository with the same name cannot assume the role.
+
+**Trade-off:** If the repository is transferred to another owner, the IDs in
+`variables.tf` must be updated.

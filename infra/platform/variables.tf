@@ -39,3 +39,15 @@ variable "app_ingress_cidrs" {
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }
+
+variable "github_owner_id" {
+  description = "Numeric GitHub owner ID (part of GitHub's immutable OIDC subject)"
+  type        = string
+  default     = "262563569"
+}
+
+variable "github_repo_id" {
+  description = "Numeric GitHub repository ID (part of GitHub's immutable OIDC subject)"
+  type        = string
+  default     = "1413030078"
+}
