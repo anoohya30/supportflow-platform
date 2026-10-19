@@ -210,17 +210,35 @@ cd /opt/supportflow && git pull
 kubectl -n monitoring get pods          # all Running
 ```
 
-**Open the UIs from your laptop** (no public port; Session Manager tunnel):
+**Open the UIs from your laptop** (no public port; Session Manager tunnel to
+the host's private IP, e.g. 10.20.1.134):
 ```bash
 aws ssm start-session --target <instance_id> \
-  --document-name AWS-StartPortForwardingSession \
-  --parameters '{"portNumber":["30300"],"localPortNumber":["3000"]}'
-# Grafana:      http://localhost:3000   (user admin)
-# Prometheus:   portNumber 30090 -> http://localhost:9090
-# Alertmanager: portNumber 30093 -> http://localhost:9093
+  --document-name AWS-StartPortForwardingSessionToRemoteHost \
+  --parameters '{"host":["<host-private-ip>"],"portNumber":["30300"],"localPortNumber":["3000"]}'
+# Grafana:      http://localhost:3000/d/supportflow   (user admin)
+# Prometheus:   portNumber 30090 -> localPortNumber 9090
+# Alertmanager: portNumber 30093 -> localPortNumber 9093
 ```
-Grafana password (on the host):
+Keep that terminal open while you use the UI; Ctrl+C closes the tunnel.
+Grafana password (on the host, never paste it anywhere):
 `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d; echo`
+
+**Rotate the Grafana admin password** (also do this if it was ever exposed):
+```bash
+kubectl -n monitoring delete secret grafana-admin
+./scripts/install-monitoring.sh                      # creates a new random password
+kubectl -n monitoring rollout restart deploy/monitoring-grafana
+kubectl -n monitoring rollout status deploy/monitoring-grafana
+```
+(Grafana has no persistent volume, so the restarted pod starts with the new password.)
+
+**Check from the host without a browser:**
+```bash
+NODE_IP=$(hostname -I | awk '{print $1}')
+curl -s "http://$NODE_IP:30090/api/v1/query?query=up%7Bjob%3D%22supportflow%22%7D" | jq -r '.data.result[] | "\(.metric.environment) \(.metric.pod) up=\(.value[1])"'
+curl -s "http://$NODE_IP:30090/api/v1/alerts" | jq -r '.data.alerts[] | "\(.labels.alertname) \(.labels.namespace) \(.state)"'
+```
 
 Dashboard: **Dashboards -> SupportFlow** (available pods, targets up,
 requests/s, 5xx/s, p95 latency, status codes).
@@ -301,6 +319,6 @@ Uptime loop (laptop):
 |---|---|
 | Alert notifications (email/Slack) | ❌ Not completed (alerts visible in UI only) |
 | Off-host / cross-region backup copy | ❌ Not completed (single region bucket) |
-| Secret rotation | ❌ Not completed |
+| Secret rotation | ⚠️ Partial: Grafana admin password rotation proven (runbook 7); DB password and AWS keys not rotated |
 
 See `docs/acceptance-evidence.md` for the full requirement status.
