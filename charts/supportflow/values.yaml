@@ -66,6 +66,8 @@ migration:
 
 networkPolicy:
   enabled: true
+  # Prometheus runs in this namespace and scrapes GET /metrics on port 8000.
+  monitoringNamespace: monitoring
   # The node (kubelet health probes) reaches pods from these addresses on k3s:
   # 10.42.0.1 = the node's address on the pod network, 10.20.0.0/16 = the VPC.
   nodeCidrs:

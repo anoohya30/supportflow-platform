@@ -1,6 +1,7 @@
 {{- if .Values.networkPolicy.enabled }}
-# Only the ingress controller (Traefik, in kube-system) and the node itself
-# (for health probes) may reach the API pods. Everything else is denied.
+# Only the ingress controller (Traefik, in kube-system), the node itself
+# (for health probes) and Prometheus (in the monitoring namespace, for
+# /metrics) may reach the API pods. Everything else is denied.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -17,6 +18,11 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: kube-system
+        {{- with .Values.networkPolicy.monitoringNamespace }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        {{- end }}
         {{- range .Values.networkPolicy.nodeCidrs }}
         - ipBlock:
             cidr: {{ . }}

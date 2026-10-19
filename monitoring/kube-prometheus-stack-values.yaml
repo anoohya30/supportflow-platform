@@ -1,0 +1,170 @@
+# kube-prometheus-stack settings for the single-node k3s lab host.
+# Installed by scripts/install-monitoring.sh (chart version pinned there).
+#
+# Access: Grafana, Prometheus and Alertmanager use NodePorts that are NOT
+# open in the AWS security group (only port 80 is). They are reached only
+# through Session Manager port forwarding (runbook 7). No public UI.
+
+crds:
+  enabled: true
+
+# k3s runs etcd, the scheduler, controller-manager and kube-proxy inside one
+# process and does not expose their metrics, so scraping them would only
+# produce false "target down" alerts.
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+defaultRules:
+  create: true
+  rules:
+    etcd: false
+    kubeControllerManager: false
+    kubeProxy: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+
+# SupportFlow alert rules (they appear in Prometheus -> Alerts and Alertmanager).
+additionalPrometheusRulesMap:
+  supportflow:
+    groups:
+      - name: supportflow.availability
+        rules:
+          - alert: SupportFlowNoAvailablePods
+            expr: kube_deployment_status_replicas_available{deployment="supportflow-api", namespace=~"staging|production-lab"} < 1
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "SupportFlow API has no available pods in {{ $labels.namespace }}"
+              runbook: "docs/runbooks.md section 9 (failure drills / triage)"
+          - alert: SupportFlowReplicasDegraded
+            expr: kube_deployment_status_replicas_available{deployment="supportflow-api", namespace=~"staging|production-lab"} < kube_deployment_spec_replicas{deployment="supportflow-api", namespace=~"staging|production-lab"}
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "SupportFlow API in {{ $labels.namespace }} is running fewer replicas than desired"
+          - alert: SupportFlowDatabaseDown
+            expr: kube_statefulset_status_replicas_ready{statefulset="postgres", namespace=~"staging|production-lab"} < 1
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "PostgreSQL is not ready in {{ $labels.namespace }}"
+      - name: supportflow.slo
+        rules:
+          - alert: SupportFlowHighErrorRate
+            expr: |
+              sum by (environment) (rate(http_request_errors_total{job="supportflow"}[5m]))
+                /
+              sum by (environment) (rate(http_requests_total{job="supportflow"}[5m])) > 0.05
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "More than 5% of requests fail with 5xx in {{ $labels.environment }}"
+          - alert: SupportFlowHighLatencyP95
+            expr: |
+              histogram_quantile(0.95,
+                sum by (environment, le) (rate(http_request_duration_seconds_bucket{job="supportflow"}[5m]))) > 0.5
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "p95 latency above 500 ms in {{ $labels.environment }}"
+
+prometheus:
+  service:
+    type: NodePort
+    nodePort: 30090
+  prometheusSpec:
+    retention: 3d
+    scrapeInterval: 30s
+    # Pick up rules/monitors without needing a "release" label.
+    ruleSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+      limits:
+        memory: 1Gi
+    # Scrape GET /metrics from every SupportFlow API pod in both environments.
+    additionalScrapeConfigs:
+      - job_name: supportflow
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [staging, production-lab]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            regex: supportflow
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+            regex: migration
+            action: drop
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            regex: "8000"
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: environment
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+alertmanager:
+  service:
+    type: NodePort
+    nodePort: 30093
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+
+grafana:
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  service:
+    type: NodePort
+    nodePort: 30300
+  persistence:
+    enabled: false
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 384Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 192Mi
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      memory: 96Mi

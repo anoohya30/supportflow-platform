@@ -11,7 +11,10 @@ Contents:
 4. Promote the same image to production-lab
 5. Roll back a bad release
 6. Teardown (delete everything)
-7. Alert triage, database restore, secret rotation: status
+7. Monitoring: open Grafana / Prometheus / Alertmanager, alert triage
+8. Database backup and restore
+9. Failure drills
+10. Not yet implemented
 
 ---
 
@@ -193,12 +196,111 @@ aws s3 ls | grep supportflow
 
 ---
 
-## 7. Not yet implemented
+## 7. Monitoring and alert triage
 
-| Runbook | Status |
+**What runs:** kube-prometheus-stack in namespace `monitoring` (Prometheus,
+Alertmanager, Grafana, kube-state-metrics, node-exporter). Prometheus scrapes
+`GET /metrics` from every API pod in `staging` and `production-lab`
+(job `supportflow`, label `environment`).
+
+**Install / upgrade (on the host):**
+```bash
+cd /opt/supportflow && git pull
+./scripts/install-monitoring.sh
+kubectl -n monitoring get pods          # all Running
+```
+
+**Open the UIs from your laptop** (no public port; Session Manager tunnel):
+```bash
+aws ssm start-session --target <instance_id> \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["30300"],"localPortNumber":["3000"]}'
+# Grafana:      http://localhost:3000   (user admin)
+# Prometheus:   portNumber 30090 -> http://localhost:9090
+# Alertmanager: portNumber 30093 -> http://localhost:9093
+```
+Grafana password (on the host):
+`kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d; echo`
+
+Dashboard: **Dashboards -> SupportFlow** (available pods, targets up,
+requests/s, 5xx/s, p95 latency, status codes).
+
+**Alerts** (`monitoring/kube-prometheus-stack-values.yaml`):
+
+| Alert | Fires when | Severity |
+|---|---|---|
+| SupportFlowNoAvailablePods | 0 available API pods for 1 min | critical |
+| SupportFlowReplicasDegraded | fewer pods than desired for 5 min | warning |
+| SupportFlowDatabaseDown | PostgreSQL not ready for 2 min | critical |
+| SupportFlowHighErrorRate | > 5% of requests are 5xx for 5 min | critical |
+| SupportFlowHighLatencyP95 | p95 > 500 ms for 10 min | warning |
+
+**Triage:**
+1. Prometheus -> Alerts: which alert, which `namespace`/`environment`.
+2. `kubectl -n <env> get pods` and `kubectl -n <env> describe pod <pod>`
+   (look at Events: ImagePullBackOff, CrashLoopBackOff, OOMKilled).
+3. `kubectl -n <env> logs deploy/supportflow-api --tail=50` (JSON logs with request IDs).
+4. Recent release? `helm -n <env> history supportflow` -> roll back (runbook 5).
+5. Database? `kubectl -n <env> get pods -l app.kubernetes.io/name=postgres`.
+
+**Limitation:** Alertmanager has no notification receiver (no email/Slack
+configured); alerts are visible in Prometheus and Alertmanager only.
+
+---
+
+## 8. Database backup and restore
+
+**Backup** (on the host; uses the host IAM role, no keys):
+```bash
+./scripts/backup-db.sh staging
+./scripts/backup-db.sh production-lab
+cat /var/log/supportflow/backups.log
+```
+Writes a `pg_dump` (custom format) to the encrypted, versioned S3 backups
+bucket under `<env>/supportflow-<timestamp>.dump`. Expected: `BACKUP OK`.
+
+**Daily schedule (optional):** `./scripts/install-backup-timer.sh`
+(systemd timer, 02:15 UTC, catches up after the host was stopped).
+
+**Restore drill (non-destructive):**
+```bash
+./scripts/restore-db.sh staging            # newest backup
+```
+Restores into a separate scratch database `supportflow_restore_check`,
+compares the ticket count with the live database, then drops the scratch
+database. Expected: `RESTORE VERIFIED`.
+
+**Real restore (data loss incident)** - only after the drill succeeded:
+1. Stop writes: `kubectl -n <env> scale deploy/supportflow-api --replicas=0`
+2. `KEEP=1 ./scripts/restore-db.sh <env> <s3-key>` (keeps the scratch DB)
+3. Swap databases inside postgres (`ALTER DATABASE supportflow RENAME TO supportflow_broken;`
+   then `ALTER DATABASE supportflow_restore_check RENAME TO supportflow;`)
+4. `kubectl -n <env> scale deploy/supportflow-api --replicas=2`, smoke test.
+
+**Abort if:** the drill does not print `RESTORE VERIFIED`.
+
+---
+
+## 9. Failure drills
+
+| Drill | Command (host) | Expected |
+|---|---|---|
+| API pod killed | `kubectl -n staging delete pod <one supportflow-api pod>` | replacement pod Running in < 30 s; laptop uptime loop stays 200 |
+| All API pods gone | `kubectl -n staging scale deploy/supportflow-api --replicas=0` | `SupportFlowNoAvailablePods` fires after ~1-2 min; scale back to 2 -> alert resolves |
+| Database pod killed | `kubectl -n staging delete pod postgres-0` | `/health/ready` returns 503 briefly, then 200; data intact (count unchanged) |
+| Bad release | see runbook 5 | release fails, old pods keep serving, rollback |
+
+Uptime loop (laptop):
+`for i in $(seq 1 60); do curl -s -o /dev/null -w "%{http_code} " http://staging.<ip-dashes>.sslip.io/health/ready; sleep 2; done; echo`
+
+---
+
+## 10. Not yet implemented
+
+| Item | Status |
 |---|---|
-| Alert triage | ❌ Not completed (no Prometheus/Alertmanager) |
-| Database backup restore | ❌ Not completed (backup bucket exists; backup job not built) |
+| Alert notifications (email/Slack) | ❌ Not completed (alerts visible in UI only) |
+| Off-host / cross-region backup copy | ❌ Not completed (single region bucket) |
 | Secret rotation | ❌ Not completed |
 
 See `docs/acceptance-evidence.md` for the full requirement status.
