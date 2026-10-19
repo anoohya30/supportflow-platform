@@ -240,3 +240,37 @@ be reused, so a deleted-and-recreated repository with the same name cannot assum
 
 **Trade-off:** If the repository is transferred to another owner, the IDs in
 `variables.tf` must be updated.
+
+---
+
+## D-017: kube-prometheus-stack, reached only through Session Manager
+*Status: Accepted · 2026-10-19*
+
+**Decision:** Monitoring uses the kube-prometheus-stack Helm chart (pinned version) in a
+`monitoring` namespace: Prometheus scrapes the API's `/metrics` in both environments,
+Alertmanager evaluates five SupportFlow alert rules, Grafana shows a SupportFlow dashboard.
+The UIs use NodePorts that the security group does not open; they are reached only through
+Session Manager port forwarding.
+
+**Why:** One chart gives metrics, alerts, dashboards and Kubernetes state metrics with little
+custom code. No new public endpoint and no extra login surface on the internet.
+
+**Trade-off:** Uses about 1 GB of the host's memory. No alert notification channel
+(email/Slack) is configured. Data is lost if the host is rebuilt (3-day retention, no
+persistent volume).
+
+---
+
+## D-018: Logical backups to S3 with a non-destructive restore drill
+*Status: Accepted · 2026-10-19*
+
+**Decision:** `scripts/backup-db.sh` streams `pg_dump --format=custom` straight to the
+encrypted, versioned backups bucket using the host's IAM role. `scripts/restore-db.sh`
+restores the newest backup into a scratch database and compares counts with the live
+database. A systemd timer can run backups daily.
+
+**Why:** A backup only counts once a restore has been proven. Restoring into a scratch
+database proves the backup without risking live data.
+
+**Trade-off:** Point-in-time recovery is not available (only whole dumps). Backups live in
+the same region as the host.
