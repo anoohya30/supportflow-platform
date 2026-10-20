@@ -277,8 +277,10 @@ cat /var/log/supportflow/backups.log
 Writes a `pg_dump` (custom format) to the encrypted, versioned S3 backups
 bucket under `<env>/supportflow-<timestamp>.dump`. Expected: `BACKUP OK`.
 
-**Daily schedule (optional):** `./scripts/install-backup-timer.sh`
-(systemd timer, 02:15 UTC, catches up after the host was stopped).
+**Schedule (RPO 15 min):** `./scripts/install-backup-timer.sh`
+(systemd timer every 15 minutes; catches up after the host was stopped).
+Check: `systemctl list-timers supportflow-backup.timer --no-pager` and
+`tail -4 /var/log/supportflow/backups.log`.
 
 **Restore drill (non-destructive):**
 ```bash
@@ -307,6 +309,7 @@ database. Expected: `RESTORE VERIFIED`.
 | All API pods gone | `kubectl -n staging scale deploy/supportflow-api --replicas=0` | `SupportFlowNoAvailablePods` fires after ~1-2 min; scale back to 2 -> alert resolves |
 | Database pod killed | `kubectl -n staging delete pod postgres-0` | `/health/ready` returns 503 briefly, then 200; data intact (count unchanged) |
 | Bad release | see runbook 5 | release fails, old pods keep serving, rollback |
+| Load test (target 2.1) | laptop: `docker run --rm -i -u "$(id -u):$(id -g)" -e BASE_URL=http://staging.<ip-dashes>.sslip.io -v "$PWD/docs/evidence:/out" grafana/k6:1.8.1 run --quiet --summary-export=/out/day10-k6-summary.json - < load-tests/k6-tickets.js` | 10 min at 20 req/s; thresholds p95 < 500 ms and 5xx < 1% pass |
 
 Uptime loop (laptop):
 `for i in $(seq 1 60); do curl -s -o /dev/null -w "%{http_code} " http://staging.<ip-dashes>.sslip.io/health/ready; sleep 2; done; echo`

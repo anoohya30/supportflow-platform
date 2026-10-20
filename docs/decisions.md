@@ -274,3 +274,35 @@ database proves the backup without risking live data.
 
 **Trade-off:** Point-in-time recovery is not available (only whole dumps). Backups live in
 the same region as the host.
+
+---
+
+## D-019: Backups every 15 minutes (RPO 15 min)
+*Status: Accepted · 2026-10-20*
+
+**Decision:** The systemd backup timer runs `scripts/backup-db.sh` for both environments
+every 15 minutes (`OnCalendar=*:0/15`, `Persistent=true`) instead of once a day.
+
+**Why:** Acceptance target 2.3 requires a recovery point objective of 15 minutes or less.
+Each dump is about 10 KB, so frequent backups cost almost nothing; old object versions
+expire through the bucket lifecycle rule.
+
+**Trade-off:** No backups are taken while the lab host is stopped (there is also no data
+change then); the first backup after a start runs immediately because of `Persistent=true`.
+For a real service, continuous WAL archiving (point-in-time recovery) would replace dumps.
+
+---
+
+## D-020: Load test with k6 from the laptop, by Docker
+*Status: Accepted · 2026-10-20*
+
+**Decision:** `load-tests/k6-tickets.js` uses a constant-arrival-rate scenario (20 req/s
+for 10 min) with thresholds for p95 latency and 5xx rate, run with the pinned
+`grafana/k6:1.8.1` container from the laptop against staging over the internet.
+
+**Why:** Running the load generator outside the cluster measures the real user path
+(internet -> Traefik -> API -> PostgreSQL) and does not steal CPU from the host under test.
+Docker avoids installing k6.
+
+**Trade-off:** Results include the laptop's home network latency; a dedicated load
+generator in the same region would give cleaner numbers.
