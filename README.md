@@ -76,7 +76,7 @@ python scripts/smoke_test.py       # call every endpoint once
 app/                 FastAPI service
 migrations/          Alembic database migrations
 tests/               API contract and operations tests
-scripts/             Seed, smoke test, deploy, backup/restore, monitoring install
+scripts/             Seed, smoke test, deploy, backup/restore, monitoring install, demo walkthrough
 infra/bootstrap/     Terraform: remote state bucket
 infra/platform/      Terraform: VPC, EC2 k3s host, ECR, S3 backups, IAM/OIDC
 charts/supportflow/  Helm chart (API, migration Job, NetworkPolicy, ingress)
@@ -89,7 +89,9 @@ docs/                Decisions, runbooks, evidence, security exceptions
 
 ## Documentation
 
-- [Acceptance evidence index](docs/acceptance-evidence.md) (start here)
+- [Presentation](docs/presentation.md) (start here: problem, architecture, release flow, security, results, limitations, cost)
+- [Architecture and trust boundaries](docs/architecture.md)
+- [Acceptance evidence index](docs/acceptance-evidence.md)
 - [Runbooks](docs/runbooks.md): provision, connect, deploy, promote, rollback, teardown, monitoring, backup/restore, failure drills
 - [Design decisions](docs/decisions.md) (D-001 to D-020)
 - [Security exceptions](docs/security-exceptions.md)
