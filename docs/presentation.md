@@ -45,7 +45,7 @@ fresh database; staging outage alert drill. Evidence: [docs/evidence/](evidence/
 | | Amount (USD) |
 |---|---|
 | Estimate for the lab period (host about 6 h running, disk + public IP for about 6 days, S3/ECR) | about 2 to 3 |
-| Observed (AWS Free plan credit used: 119.18 at start, 138.21 remaining) | **-19.03** |
+| Observed (actual AWS usage cost from Cost Explorer, 1 Sep to today; fully covered by Free plan credits, 138.12 credit still left) | **$0.95** |
 
 Host stopped between sessions; budget alarm at USD 25 (counts usage before credits).
 Final teardown (runbook 6) after the review is confirmed.
