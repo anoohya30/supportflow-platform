@@ -5,19 +5,39 @@
 > deployment.
 
 SupportFlow is a small support-ticket API. This repository holds the application
-and, as it grows, the platform that builds, deploys, monitors and recovers it:
-Terraform (AWS), Docker, k3s, Helm, Argo CD (GitOps), GitHub Actions,
-Prometheus and Grafana.
+and the platform that builds, deploys, monitors and recovers it: Terraform (AWS),
+Docker, GitHub Actions (OIDC to AWS), Amazon ECR, k3s on EC2, Helm, Prometheus,
+Grafana, Alertmanager, S3 backups and k6.
 
 ## Status
 
 | Area | Status |
 |---|---|
-| Ticket API, migrations, tests | ✅ Day 1 |
-| Container image, Helm chart, local Kubernetes | ⏳ Day 2 |
-| Terraform (AWS) and CI pipeline | ⏳ Day 3 |
-| GitOps, monitoring, backups | ⏳ Day 4 |
-| Load test, failure exercises, runbooks | ⏳ Day 5 |
+| Ticket API, migrations, tests (19), smoke test | ✅ |
+| Container image (non-root), CI with 4 required checks, secret + vulnerability scan, SBOM | ✅ |
+| Terraform: remote state + platform (VPC, EC2 k3s host, ECR, IAM/OIDC, S3 backups) | ✅ |
+| Image built once, pushed by digest via GitHub OIDC (no stored AWS keys) | ✅ |
+| Helm deploy to staging, promotion of the same digest to production-lab, rollback | ✅ |
+| Prometheus, Grafana dashboard, 5 alert rules, alert drill | ✅ |
+| Backups to S3 every 15 min, restore drill, failure drills | ✅ |
+| k6 load test (10 min @ 20 req/s) | see `docs/evidence/` |
+| Argo CD (GitOps reconciliation), reviewer-enforced promotion gate, alert notifications | ❌ not completed (see acceptance evidence) |
+
+**Architecture (lab):**
+
+```
+GitHub (PR -> 4 required checks) --merge--> main --CI--> build once, scan, SBOM
+        |                                                   | OIDC (main only)
+        v                                                   v
+   reviewer / me                                     Amazon ECR (image@sha256)
+                                                            |
+ laptop --Session Manager (no SSH)--> EC2 m7i-flex.large (k3s, eu-west-2)
+                                       |- staging:        2 x API + PostgreSQL
+                                       |- production-lab: 2 x API + PostgreSQL (same digest)
+                                       |- monitoring:     Prometheus, Alertmanager, Grafana
+                                       '- backup timer -> S3 (encrypted, versioned)
+ users --HTTP :80 (only open port)--> Traefik -> staging.<ip>.sslip.io / prod.<ip>.sslip.io
+```
 
 ## Quick start (local)
 
@@ -56,19 +76,23 @@ python scripts/smoke_test.py       # call every endpoint once
 app/                 FastAPI service
 migrations/          Alembic database migrations
 tests/               API contract and operations tests
-scripts/             Seed data, smoke test
-infra/bootstrap/     Terraform: remote state (Day 3)
-infra/platform/      Terraform: VPC, EC2, ECR, S3, IAM (Day 3)
-charts/supportflow/  Helm chart (Day 2)
-gitops/              Argo CD desired state per environment (Day 4)
-.github/workflows/   CI/CD pipelines (Day 3)
-load-tests/          k6 load tests (Day 5)
-docs/                Guides, decisions, runbooks, evidence
+scripts/             Seed, smoke test, deploy, backup/restore, monitoring install
+infra/bootstrap/     Terraform: remote state bucket
+infra/platform/      Terraform: VPC, EC2 k3s host, ECR, S3 backups, IAM/OIDC
+charts/supportflow/  Helm chart (API, migration Job, NetworkPolicy, ingress)
+k8s/                 PostgreSQL StatefulSet per environment
+monitoring/          kube-prometheus-stack values, alert rules, Grafana dashboard
+load-tests/          k6 load test
+.github/workflows/   CI pipeline
+docs/                Decisions, runbooks, evidence, security exceptions
 ```
 
 ## Documentation
 
-- [Day 1 guide](docs/day-1-guide.md)
-- [Design decisions](docs/decisions.md)
-- [Acceptance evidence index](docs/acceptance-evidence.md)
+- [Acceptance evidence index](docs/acceptance-evidence.md) (start here)
+- [Runbooks](docs/runbooks.md): provision, connect, deploy, promote, rollback, teardown, monitoring, backup/restore, failure drills
+- [Design decisions](docs/decisions.md) (D-001 to D-020)
+- [Security exceptions](docs/security-exceptions.md)
+- [Evidence files](docs/evidence/)
 - [AI assistance disclosure](docs/ai-assistance.md)
+- [Day 1 guide](docs/day-1-guide.md)
