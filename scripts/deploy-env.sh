@@ -72,5 +72,5 @@ printf '%s env=%s version=%s commit=%s image=%s operator=%s\n' \
 echo "==> [$ENV_NAME] done"
 kubectl -n "$ENV_NAME" get pods -o wide
 echo
-echo "App URL: http://$APP_HOST"
-curl -sS "http://$APP_HOST/version"; echo
+echo "App URL: https://$APP_HOST"
+curl -sS "https://$APP_HOST/version" || echo "(HTTPS not ready yet: the certificate can take a minute on first issue)"; echo

@@ -35,7 +35,7 @@ variable "helm_version" {
 }
 
 variable "app_ingress_cidrs" {
-  description = "Who may reach the app on port 80 (the only open port)"
+  description = "Who may reach the app on ports 443 and 80 (the only open ports)"
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }

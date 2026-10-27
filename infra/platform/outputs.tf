@@ -10,12 +10,12 @@ output "public_ip" {
 
 output "staging_url" {
   description = "Staging app URL (sslip.io = free DNS that maps the name to the IP)"
-  value       = "http://staging.${replace(aws_eip.host.public_ip, ".", "-")}.sslip.io"
+  value       = "https://staging.${replace(aws_eip.host.public_ip, ".", "-")}.sslip.io"
 }
 
 output "production_lab_url" {
   description = "Production-lab app URL"
-  value       = "http://prod.${replace(aws_eip.host.public_ip, ".", "-")}.sslip.io"
+  value       = "https://prod.${replace(aws_eip.host.public_ip, ".", "-")}.sslip.io"
 }
 
 output "ecr_repository_url" {

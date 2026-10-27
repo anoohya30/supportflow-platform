@@ -3,18 +3,24 @@
 //   pass if p95 latency < 500 ms and server errors (5xx) < 1%.
 //
 // Run from the laptop with Docker (no install needed):
-//   docker run --rm -i -u "$(id -u):$(id -g)" -e BASE_URL=http://staging.<ip-with-dashes>.sslip.io \
+//   docker run --rm -i -u "$(id -u):$(id -g)" -e BASE_URL=https://staging.<ip-with-dashes>.sslip.io \
 //     -v "$PWD/docs/evidence:/out" grafana/k6:1.8.1 run --quiet \
 //     --summary-export=/out/day10-k6-summary.json - < load-tests/k6-tickets.js
 //
-// Traffic mix (realistic for a support desk): 60% list, 25% read one,
-// 10% create, 5% update status. Only synthetic data is created.
+// Traffic mix required by the brief: 80% reads and 20% creates
+//   reads   = 50% list tickets + 30% read one ticket
+//   creates = 20% create a ticket
+// Only synthetic data is created. Expected validation errors (HTTP 4xx) are
+// counted separately in "validation_errors" and are NOT server errors.
 import http from 'k6/http';
 import { check } from 'k6';
-import { Rate } from 'k6/metrics';
+import { Counter, Rate } from 'k6/metrics';
 
 const BASE = __ENV.BASE_URL || 'http://localhost:8000';
 const serverErrors = new Rate('server_errors'); // share of responses with status >= 500
+const validationErrors = new Counter('validation_errors'); // 4xx responses, reported separately
+const reads = new Counter('mix_reads');
+const creates = new Counter('mix_creates');
 
 export const options = {
   scenarios: {
@@ -38,21 +44,22 @@ export const options = {
 
 const jsonParams = (name) => ({ headers: { 'Content-Type': 'application/json' }, tags: { name: name } });
 const PRIORITIES = ['low', 'normal', 'high'];
-const STATUSES = ['open', 'in_progress', 'closed'];
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const seededId = () => 1 + Math.floor(Math.random() * 1000); // ids 1..1000 exist (seed)
 
 export default function () {
   const r = Math.random();
   let res;
-  if (r < 0.6) {
+  if (r < 0.5) {
     const offset = Math.floor(Math.random() * 900);
     res = http.get(`${BASE}/tickets?limit=20&offset=${offset}`, { tags: { name: 'GET /tickets' } });
     check(res, { 'list 200': (x) => x.status === 200 });
-  } else if (r < 0.85) {
+    reads.add(1);
+  } else if (r < 0.8) {
     res = http.get(`${BASE}/tickets/${seededId()}`, { tags: { name: 'GET /tickets/{id}' } });
     check(res, { 'read 200': (x) => x.status === 200 });
-  } else if (r < 0.95) {
+    reads.add(1);
+  } else {
     const body = JSON.stringify({
       subject: `Load test ticket ${__VU}-${__ITER}`,
       description: 'Synthetic ticket created by the k6 load test. No real customer data.',
@@ -60,10 +67,8 @@ export default function () {
     });
     res = http.post(`${BASE}/tickets`, body, jsonParams('POST /tickets'));
     check(res, { 'create 201': (x) => x.status === 201 });
-  } else {
-    const body = JSON.stringify({ status: pick(STATUSES) });
-    res = http.patch(`${BASE}/tickets/${seededId()}`, body, jsonParams('PATCH /tickets/{id}'));
-    check(res, { 'update 200': (x) => x.status === 200 });
+    creates.add(1);
   }
   serverErrors.add(res.status >= 500);
+  if (res.status >= 400 && res.status < 500) validationErrors.add(1);
 }

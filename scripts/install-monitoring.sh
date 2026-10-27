@@ -32,6 +32,10 @@ kubectl -n monitoring create configmap supportflow-dashboard \
   | kubectl label --local -f - grafana_dashboard=1 -o yaml \
   | kubectl apply -f -
 
+echo "==> Local webhook collector for alert notifications"
+kubectl apply -f monitoring/alert-webhook.yaml
+kubectl -n monitoring rollout status deploy/alert-webhook --timeout=120s
+
 echo "==> Helm chart kube-prometheus-stack $CHART_VERSION"
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >/dev/null 2>&1 || true
 helm repo update prometheus-community
@@ -45,4 +49,5 @@ echo "==> done"
 kubectl -n monitoring get pods
 echo
 echo "Grafana user: admin   password: kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d; echo"
+echo "Alert notifications: kubectl -n monitoring logs deploy/alert-webhook"
 echo "Open from your laptop with Session Manager port forwarding (runbook 7)."

@@ -1,0 +1,125 @@
+# Local webhook collector for Alertmanager notifications (lab only).
+# Alertmanager POSTs FIRING and RESOLVED messages here; the collector prints
+# one line per alert with timestamps and the runbook link. Read them with:
+#
+#   kubectl -n monitoring logs deploy/alert-webhook
+#
+# Nothing leaves the cluster: no real customers, no external services.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alert-webhook
+  namespace: monitoring
+data:
+  collector.py: |
+    import json
+    from datetime import datetime, timezone
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            received = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            try:
+                payload = json.loads(body)
+            except ValueError:
+                payload = {"alerts": []}
+            for a in payload.get("alerts", []):
+                labels, notes = a.get("labels", {}), a.get("annotations", {})
+                print(
+                    f"received={received} status={a.get('status', '?').upper()} "
+                    f"alert={labels.get('alertname')} "
+                    f"namespace={labels.get('namespace', labels.get('environment', '-'))} "
+                    f"severity={labels.get('severity', '-')} "
+                    f"startsAt={a.get('startsAt')} endsAt={a.get('endsAt')} "
+                    f"runbook={notes.get('runbook_url', '-')}",
+                    flush=True,
+                )
+            self.send_response(200)
+            self.end_headers()
+
+        def do_GET(self):  # health check
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *args):  # keep the log to alert lines only
+            pass
+
+
+    HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-webhook
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alert-webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alert-webhook
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: alert-webhook
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: collector
+          image: python:3.12.7-slim
+          command: ["python", "-u", "/app/collector.py"]
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: app
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: app
+          configMap:
+            name: alert-webhook
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-webhook
+  namespace: monitoring
+spec:
+  selector:
+    app.kubernetes.io/name: alert-webhook
+  ports:
+    - port: 8080
+      targetPort: 8080
