@@ -8,7 +8,7 @@ skip-check:
   - CKV_AWS_126   # EC2 detailed monitoring (cost)
   - CKV_AWS_394   # AZ data source pinning (single-AZ lab)
   - CKV_AWS_130   # public IP on subnet (no NAT gateway: cost)
-  - CKV_AWS_260   # port 80 open to internet (intended app ingress; no TLS yet)
+  - CKV_AWS_260   # port 80 open to internet (only redirects to HTTPS + Let's Encrypt HTTP-01 challenge)
   - CKV_AWS_136   # ECR KMS encryption (AES256 used instead)
   - CKV_AWS_145   # S3 KMS encryption (AES256 used instead)
   - CKV2_AWS_62   # S3 event notifications (not needed for lab)

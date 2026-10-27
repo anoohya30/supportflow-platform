@@ -1,0 +1,26 @@
+# HTTPS for the k3s built-in Traefik ingress controller (lab host).
+# Applied ON THE HOST by scripts/enable-https.sh:
+#   - Let's Encrypt ACME resolver "le" (HTTP-01 challenge on port 80):
+#     trusted certificates, issued and renewed automatically by Traefik
+#     (renewal ~30 days before the 90-day expiry).
+#   - Certificates are stored in /data/acme.json on a small persistent volume,
+#     so a Traefik restart does not request new certificates.
+#   - Every plain-HTTP request is redirected to HTTPS.
+# k3s's helm-controller merges these values into its own Traefik chart.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    persistence:
+      enabled: true
+      size: 128Mi
+    additionalArguments:
+      - "--certificatesresolvers.le.acme.storage=/data/acme.json"
+      - "--certificatesresolvers.le.acme.httpchallenge=true"
+      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"

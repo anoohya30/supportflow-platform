@@ -48,7 +48,8 @@ resource "aws_route_table_association" "public" {
 }
 
 # Firewall for the lab host.
-# ONLY port 80 (the app, via the k3s ingress) is open to the internet.
+# ONLY ports 443 (the app over HTTPS) and 80 (redirect + certificate
+# challenge) are open to the internet, both to the k3s ingress.
 # No SSH (22), no Kubernetes API (6443), no database (5432):
 # admin access is through AWS Session Manager, an authenticated tunnel.
 resource "aws_security_group" "host" {
@@ -58,6 +59,19 @@ resource "aws_security_group" "host" {
   tags        = { Name = "supportflow-host-sg" }
 }
 
+resource "aws_vpc_security_group_ingress_rule" "https" {
+  for_each = toset(var.app_ingress_cidrs)
+
+  security_group_id = aws_security_group.host.id
+  description       = "App ingress (HTTPS, Let's Encrypt certificate) via k3s Traefik"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = each.value
+}
+
+# Port 80 stays open only for the Let's Encrypt HTTP-01 challenge and to
+# redirect every plain-HTTP request to HTTPS (Traefik entrypoint redirect).
 resource "aws_vpc_security_group_ingress_rule" "http" {
   for_each = toset(var.app_ingress_cidrs)
 

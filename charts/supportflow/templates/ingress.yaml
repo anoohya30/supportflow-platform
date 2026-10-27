@@ -5,8 +5,19 @@ metadata:
   name: {{ include "supportflow.fullname" . }}
   labels:
     {{- include "supportflow.labels" . | nindent 4 }}
+  {{- if .Values.ingress.tls.enabled }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: {{ .Values.ingress.tls.certResolver | quote }}
+  {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+  {{- end }}
   rules:
     - host: {{ required "ingress.host is required" .Values.ingress.host | quote }}
       http:

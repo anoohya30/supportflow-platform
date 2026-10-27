@@ -35,6 +35,12 @@ ingress:
   enabled: true
   className: traefik
   host: ""
+  # HTTPS with a trusted Let's Encrypt certificate, issued and renewed by
+  # Traefik's ACME resolver "le" (k8s/traefik-config.yaml). Plain HTTP is
+  # redirected to HTTPS by Traefik.
+  tls:
+    enabled: true
+    certResolver: le
 
 resources:
   requests:
