@@ -53,6 +53,15 @@ resource "aws_instance" "host" {
   }
 
   tags = { Name = "supportflow-lab-host" }
+
+  # Incident 2026-10-27 (docs/incident-2026-10-27-host-replaced.md): the AMI
+  # data source picks the NEWEST Ubuntu image, so when Canonical published a
+  # new image, an unrelated apply replaced the host and its disk. A new AMI
+  # must never replace the running host by surprise: host rebuilds are a
+  # deliberate, reviewed action (terraform apply -replace=aws_instance.host).
+  lifecycle {
+    ignore_changes = [ami]
+  }
 }
 
 # Fixed public IP, so app URLs stay the same if the host is stopped/started.
