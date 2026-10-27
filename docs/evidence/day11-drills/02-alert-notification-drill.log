@@ -1,0 +1,38 @@
+Drill 2: alert notifications (SupportFlowNoAvailablePods)   started 2026-10-27T18:29:36Z
+NAME            READY   UP-TO-DATE   AVAILABLE   AGE
+alert-webhook   1/1     1            1           25m
+
+[2026-10-27T18:29:36Z] ==> baseline
+NAME              READY   UP-TO-DATE   AVAILABLE   AGE
+supportflow-api   2/2     2            2           25m
+E1027 18:29:36.762272   43254 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+    tickets: 2525
+
+[2026-10-27T18:29:36Z] ==> inject: scale staging API to 0 replicas
+deployment.apps/supportflow-api scaled
+
+[2026-10-27T18:29:36Z] ==> waiting for the FIRING notification (rule: < 1 available replica for 1m)
+received=2026-10-27T18:31:03Z status=FIRING alert=SupportFlowNoAvailablePods namespace=staging severity=critical startsAt=2026-10-27T18:30:52.976Z endsAt=0001-01-01T00:00:00Z runbook=https://github.com/anoohya30/supportflow-platform/blob/main/docs/runbooks.md#7-monitoring-and-alert-triage
+[2026-10-27T18:31:07Z] PASS: FIRING notification received 91 s after the injection
+
+[2026-10-27T18:31:07Z] ==> mitigate: scale staging API back to 2 replicas
+deployment.apps/supportflow-api scaled
+Waiting for deployment "supportflow-api" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "supportflow-api" rollout to finish: 1 of 2 updated replicas are available...
+deployment "supportflow-api" successfully rolled out
+
+[2026-10-27T18:31:11Z] ==> waiting for the RESOLVED notification
+received=2026-10-27T18:30:03Z status=RESOLVED alert=SupportFlowNoAvailablePods namespace=staging severity=critical startsAt=2026-10-27T18:25:52.976Z endsAt=2026-10-27T18:29:22.976Z runbook=https://github.com/anoohya30/supportflow-platform/blob/main/docs/runbooks.md#7-monitoring-and-alert-triage
+[2026-10-27T18:31:12Z] PASS: RESOLVED notification received 5 s after recovery
+
+[2026-10-27T18:31:12Z] ==> verify
+E1027 18:31:12.255365   46102 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+    tickets: 2525 (before: 2525)
+[2026-10-27T18:31:12Z] PASS: no tickets lost
+    all notifications received during this drill:
+      received=2026-10-27T18:30:03Z status=RESOLVED alert=SupportFlowNoAvailablePods namespace=staging severity=critical startsAt=2026-10-27T18:25:52.976Z endsAt=2026-10-27T18:29:22.976Z runbook=https://github.com/anoohya30/supportflow-platform/blob/main/docs/runbooks.md#7-monitoring-and-alert-triage
+      received=2026-10-27T18:31:03Z status=FIRING alert=SupportFlowNoAvailablePods namespace=staging severity=critical startsAt=2026-10-27T18:30:52.976Z endsAt=0001-01-01T00:00:00Z runbook=https://github.com/anoohya30/supportflow-platform/blob/main/docs/runbooks.md#7-monitoring-and-alert-triage
+
+DRILL 2 PASSED   finished 2026-10-27T18:31:12Z
+
+

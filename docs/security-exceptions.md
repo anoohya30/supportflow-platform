@@ -7,7 +7,7 @@ or at teardown, whichever is first). A real service must resolve each one.
 
 | Check | Resource | Risk | Why accepted (lab) | Fix for a real service |
 |---|---|---|---|---|
-| CKV_AWS_260 | Port 80 open to internet | Traffic is unencrypted HTTP | It's the intended app entry point; no domain/TLS in scope | HTTPS with a real domain + cert-manager, or an ALB with ACM |
+| CKV_AWS_260 | Port 80 open to internet | Plain HTTP reaches Traefik | Since 2026-10-27 port 80 only redirects to HTTPS (443, Let's Encrypt certificate) and answers the HTTP-01 challenge; no app traffic is served over HTTP | Same pattern, or an ALB with ACM and port 80 redirect |
 | CKV_AWS_130 | Public IP on subnet | Host directly reachable | No NAT gateway (cost) | Private subnets + NAT/ALB |
 | CKV2_AWS_11 | No VPC flow logs | Less network forensics | Cost | Enable flow logs to CloudWatch/S3 |
 | CKV_AWS_126 | No EC2 detailed monitoring | 5-min metrics only | Cost | Enable, plus Prometheus |

@@ -5,7 +5,8 @@
 #     (renewal ~30 days before the 90-day expiry).
 #   - Certificates are stored in /data/acme.json on a small persistent volume,
 #     so a Traefik restart does not request new certificates.
-#   - Every plain-HTTP request is redirected to HTTPS.
+#   - Every plain-HTTP request is redirected to HTTPS on port 443
+#     ("to=:443"; "to=websecure" would redirect to the internal port 8443).
 # k3s's helm-controller merges these values into its own Traefik chart.
 apiVersion: helm.cattle.io/v1
 kind: HelmChartConfig
@@ -21,6 +22,6 @@ spec:
       - "--certificatesresolvers.le.acme.storage=/data/acme.json"
       - "--certificatesresolvers.le.acme.httpchallenge=true"
       - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
-      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.to=:443"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
       - "--entrypoints.web.http.redirections.entrypoint.permanent=true"

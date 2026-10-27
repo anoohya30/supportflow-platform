@@ -1,0 +1,51 @@
+Drill 3: database outage   started 2026-10-27T18:31:13Z
+
+[2026-10-27T18:31:13Z] ==> baseline
+E1027 18:31:13.293359   46237 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+    tickets: 2525
+    API container restart counts: 0 0 
+    /health/live -> 200
+    /health/ready -> 200
+
+[2026-10-27T18:31:13Z] ==> inject: stop PostgreSQL (scale statefulset to 0)
+statefulset.apps/postgres scaled
+pod/postgres-0 condition met
+
+[2026-10-27T18:31:34Z] ==> first symptom: readiness fails, liveness stays healthy
+    /health/live -> 200
+    /health/ready -> 503
+NAME                               READY   STATUS    RESTARTS   AGE
+supportflow-api-5c9cb58b49-6kqg9   0/1     Running   0          27s
+supportflow-api-5c9cb58b49-t8xgn   0/1     Running   0          27s
+
+[2026-10-27T18:31:35Z] ==> detection: waiting for the SupportFlowDatabaseDown FIRING notification (rule: 1m)
+received=2026-10-27T18:32:33Z status=FIRING alert=SupportFlowDatabaseDown namespace=staging severity=critical startsAt=2026-10-27T18:32:22.976Z endsAt=0001-01-01T00:00:00Z runbook=https://github.com/anoohya30/supportflow-platform/blob/main/docs/runbooks.md#7-monitoring-and-alert-triage
+[2026-10-27T18:32:36Z] PASS: database alert FIRING 83 s after the injection
+    API restart counts during the outage: 0 0  (before: 0 0 )
+[2026-10-27T18:32:36Z] PASS: no restart loop (liveness does not depend on the database)
+
+[2026-10-27T18:32:36Z] ==> mitigate: start PostgreSQL again
+statefulset.apps/postgres scaled
+Waiting for 1 pods to be ready...
+partitioned roll out complete: 1 new pods have been updated...
+pod/supportflow-api-5c9cb58b49-6kqg9 condition met
+pod/supportflow-api-5c9cb58b49-t8xgn condition met
+    service restored 6 s after starting PostgreSQL
+    /health/live -> 200
+    /health/ready -> 200
+
+[2026-10-27T18:32:42Z] ==> waiting for the RESOLVED notification
+received=2026-10-27T18:33:33Z status=RESOLVED alert=SupportFlowDatabaseDown namespace=staging severity=critical startsAt=2026-10-27T18:32:22.976Z endsAt=2026-10-27T18:32:52.976Z runbook=https://github.com/anoohya30/supportflow-platform/blob/main/docs/runbooks.md#7-monitoring-and-alert-triage
+[2026-10-27T18:33:33Z] PASS: database alert RESOLVED
+
+[2026-10-27T18:33:33Z] ==> verify
+E1027 18:33:33.276591   48260 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+    tickets: 2525 (before: 2525)
+[2026-10-27T18:33:33Z] PASS: no tickets lost
+    API restart counts after: 0 0 
+    notifications received during this drill:
+      received=2026-10-27T18:32:03Z status=RESOLVED alert=SupportFlowNoAvailablePods namespace=staging severity=critical startsAt=2026-10-27T18:30:52.976Z endsAt=2026-10-27T18:31:22.976Z runbook=https://github.com/anoohya30/supportflow-platform/blob/main/docs/runbooks.md#7-monitoring-and-alert-triage
+      received=2026-10-27T18:32:33Z status=FIRING alert=SupportFlowDatabaseDown namespace=staging severity=critical startsAt=2026-10-27T18:32:22.976Z endsAt=0001-01-01T00:00:00Z runbook=https://github.com/anoohya30/supportflow-platform/blob/main/docs/runbooks.md#7-monitoring-and-alert-triage
+      received=2026-10-27T18:33:33Z status=RESOLVED alert=SupportFlowDatabaseDown namespace=staging severity=critical startsAt=2026-10-27T18:32:22.976Z endsAt=2026-10-27T18:32:52.976Z runbook=https://github.com/anoohya30/supportflow-platform/blob/main/docs/runbooks.md#7-monitoring-and-alert-triage
+
+DRILL 3 PASSED   finished 2026-10-27T18:33:33Z

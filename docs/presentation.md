@@ -23,23 +23,30 @@ Diagram, data paths and trust boundaries: [docs/architecture.md](architecture.md
 
 ## 4. Security
 No stored AWS keys in CI (OIDC, `main` only, immutable subject). No SSH; Session Manager.
-Only port 80 open; admin UIs only through an SSM tunnel. IMDSv2, non-root container,
+HTTPS with a trusted Let's Encrypt certificate (ports 443 + 80 redirect only); admin UIs only through an SSM tunnel. IMDSv2, non-root container,
 NetworkPolicies, encrypted and private buckets, secret scanning on every PR, checkov with
-documented exceptions. One exposed credential (Grafana) was rotated.
+documented exceptions. NetworkPolicy negative tests 6/6. Database password rotation with
+proof that the old credential is rejected; the Grafana password was rotated after exposure.
 
 ## 5. Measured results
 | Target | Result |
 |---|---|
-| 10 min @ 20 req/s, p95 < 500 ms, 5xx < 1%, 2 replicas | 12,001 requests, **p95 28.21 ms**, **0.00% 5xx** |
-| Rollback < 5 min | < 3 min, no downtime (old pods kept serving) |
-| Restore to fresh DB < 30 min | about 5 s, row counts matched |
-| RPO <= 15 min | backups every 15 min, runs succeeded |
-| Alerting | outage -> alert firing in 2 min -> resolved |
+| 10 min @ 20 req/s, 80 % reads / 20 % creates, p95 < 500 ms, 5xx < 1%, 2 replicas | 12,000 requests, 79.9 / 20.1 %, **p95 30.94 ms**, **0.00 % 5xx** (HTTPS, production-lab) |
+| Rollback < 5 min (release that fails readiness) | detected 97 s, **rolled back in 2 s**, users saw only 200 |
+| Restore to fresh DB < 30 min, reconnect the API | **RTO 12 s**, 6 ticket IDs identical, read through the API |
+| RPO <= 15 min | backups every 15 min; **303 s** at recovery start |
+| Alerting (1 min / 1 min / 5xx over 2 min) | FIRING notification 91 s (no replicas) and 83 s (database) after injection, then RESOLVED |
 
 ## 6. Recovery demonstrations
-Bad release blocked and rolled back; API pod killed (users saw only 200);
-database pod killed (one 503, recovered in 2 s, no data lost); backup restored into a
-fresh database; staging outage alert drill. Evidence: [docs/evidence/](evidence/).
+Scripted drills (`scripts/drills/`, all passed on 27 Oct): NetworkPolicy negative tests,
+alert notification, database outage (ready 503, live 200, no restarts), readiness-failing
+release + rollback, restore + reconnect, credential rotation. Earlier: API pod killed under
+load (users saw only 200). Evidence: [day11-review-fixes-drills.md](evidence/day11-review-fixes-drills.md).
+
+**Real incident (27 Oct):** a Terraform apply replaced the host and deleted its disk. The
+platform was rebuilt from the repository and both databases recovered from S3 with no
+ticket loss. The blameless report includes the clean-room result:
+[incident-2026-10-27-host-replaced.md](incident-2026-10-27-host-replaced.md).
 
 ## 7. Cost
 | | Amount (USD) |
@@ -47,12 +54,16 @@ fresh database; staging outage alert drill. Evidence: [docs/evidence/](evidence/
 | Estimate for the lab period (host about 6 h running, disk + public IP for about 6 days, S3/ECR) | about 2 to 3 |
 | Observed (actual AWS usage cost from Cost Explorer, 1 Sep to today; fully covered by Free plan credits, 138.12 credit still left) | **$0.95** |
 
-Host stopped between sessions; budget alarm at USD 25 (counts usage before credits).
-Final teardown (runbook 6) after the review is confirmed.
+Budget alarm at USD 25 (counts usage before credits). The host now stays running during
+the review window (about USD 2.50/day from credits). Final teardown (runbook 6) only after
+the assessor confirms the review is finished.
 
 ## 8. Remaining limitations (not completed)
-- Reviewer-enforced promotion gate (solo lab; promotion is a manual, logged command).
-- Argo CD / GitOps reconciliation (deploys use Helm from the host).
-- Alert notifications (email/Slack), scheduled drift detection, HTTPS, DB password rotation.
+- Reviewer-enforced promotion gate: needs the assessor's GitHub identity; promotion is
+  still a manual, logged command.
+- Argo CD / GitOps reconciliation and the GitOps drift exercise (deploys use Helm from the host).
+- AWS Secrets Manager (secrets are random Kubernetes Secrets, rotated by runbook 11).
+- Scheduled Terraform drift check; database data on the host disk (see the incident report).
+- Notifications go to a local webhook collector only (nobody is paged).
 
 Full requirement-to-evidence matrix: [docs/acceptance-evidence.md](acceptance-evidence.md).
