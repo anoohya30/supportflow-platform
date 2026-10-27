@@ -63,7 +63,7 @@ resource "aws_vpc_security_group_ingress_rule" "https" {
   for_each = toset(var.app_ingress_cidrs)
 
   security_group_id = aws_security_group.host.id
-  description       = "App ingress (HTTPS, Let's Encrypt certificate) via k3s Traefik"
+  description       = "App ingress (HTTPS, Lets Encrypt certificate) via k3s Traefik"
   ip_protocol       = "tcp"
   from_port         = 443
   to_port           = 443
