@@ -1,0 +1,48 @@
+Drill 4: bad release + rollback   started 2026-10-27T18:33:34Z
+
+[2026-10-27T18:33:34Z] ==> baseline
+REVISION	UPDATED                 	STATUS    	CHART            	APP VERSION	DESCRIPTION     
+1       	Tue Oct 27 18:03:31 2026	superseded	supportflow-0.1.0	0.1.0      	Install complete
+2       	Tue Oct 27 18:06:12 2026	deployed  	supportflow-0.1.0	0.1.0      	Upgrade complete
+NAME                               READY   STATUS    RESTARTS   AGE
+supportflow-api-5c9cb58b49-6kqg9   1/1     Running   0          2m26s
+supportflow-api-5c9cb58b49-t8xgn   1/1     Running   0          2m26s
+E1027 18:33:34.515550   48402 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+    tickets: 2525   healthy revision: 2
+
+[2026-10-27T18:33:34Z] ==> inject: helm upgrade to release 0.1.1-bad (readiness probe -> /health/ready-v2)
+Error: UPGRADE FAILED: context deadline exceeded
+[2026-10-27T18:35:11Z] PASS: rollout failure detected by helm --wait after 97 s (new pod never Ready)
+
+[2026-10-27T18:35:11Z] ==> diagnosis
+NAME                               READY   STATUS    RESTARTS   AGE
+supportflow-api-5c9cb58b49-6kqg9   1/1     Running   0          4m3s
+supportflow-api-5c9cb58b49-t8xgn   1/1     Running   0          4m3s
+supportflow-api-5fd868cc7d-bjrlt   0/1     Running   0          90s
+1s          Warning   Unhealthy   pod/supportflow-api-5fd868cc7d-bjrlt   Readiness probe failed: HTTP probe failed with statuscode: 404
+    10 user requests to https://staging.18-135-157-38.sslip.io/health/ready: 200 200 200 200 200 200 200 200 200 200 
+REVISION	UPDATED                 	STATUS  	CHART            	APP VERSION	DESCRIPTION                                            
+2       	Tue Oct 27 18:06:12 2026	deployed	supportflow-0.1.0	0.1.0      	Upgrade complete                                       
+3       	Tue Oct 27 18:33:34 2026	failed  	supportflow-0.1.0	0.1.0      	Upgrade "supportflow" failed: context deadline exceeded
+
+[2026-10-27T18:35:12Z] ==> mitigate: helm rollback to revision 2
+Rollback was a success! Happy Helming!
+deployment "supportflow-api" successfully rolled out
+[2026-10-27T18:35:14Z] PASS: rolled back in 2 s (decision to healthy); whole incident 100 s
+
+[2026-10-27T18:35:14Z] ==> verify
+REVISION	UPDATED                 	STATUS    	CHART            	APP VERSION	DESCRIPTION                                            
+2       	Tue Oct 27 18:06:12 2026	superseded	supportflow-0.1.0	0.1.0      	Upgrade complete                                       
+3       	Tue Oct 27 18:33:34 2026	failed    	supportflow-0.1.0	0.1.0      	Upgrade "supportflow" failed: context deadline exceeded
+4       	Tue Oct 27 18:35:12 2026	deployed  	supportflow-0.1.0	0.1.0      	Rollback to 2                                          
+NAME                               READY   STATUS    RESTARTS   AGE
+supportflow-api-5c9cb58b49-6kqg9   1/1     Running   0          4m6s
+supportflow-api-5c9cb58b49-t8xgn   1/1     Running   0          4m6s
+    readiness probe path: /health/ready
+    10 user requests to https://staging.18-135-157-38.sslip.io/health/ready: 200 200 200 200 200 200 200 200 200 200 
+E1027 18:35:15.061956   50494 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+    tickets: 2525 (before: 2525)
+[2026-10-27T18:35:15Z] PASS: no tickets lost; schema untouched (no migration in this release)
+2026-10-27T18:35:15Z env=staging event=bad-release-rollback bad=0.1.1-bad rolled_back_to_revision=2 seconds=2
+
+DRILL 4 PASSED   finished 2026-10-27T18:35:15Z

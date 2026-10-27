@@ -1,0 +1,71 @@
+Drill 5: restore + reconnect API   started 2026-10-27T18:35:16Z
+
+[2026-10-27T18:35:16Z] ==> latest scheduled backup
+2026-10-27T18:30:13Z env=staging key=staging/supportflow-20261027T183011Z.dump bytes=42259 tickets=2525
+2026-10-27T18:30:15Z env=production-lab key=production-lab/supportflow-20261027T183013Z.dump bytes=10538 tickets=1006
+    key: staging/supportflow-20261027T183011Z.dump   written: 2026-10-27T18:30:13+00:00   encryption: AES256
+    data-loss window if the database failed now (RPO): 303 s (target <= 900 s)
+[2026-10-27T18:35:18Z] PASS: RPO within 15 minutes
+
+[2026-10-27T18:35:18Z] ==> restore into a FRESH database: supportflow_restored
+E1027 18:35:18.366440   50682 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+NOTICE:  database "supportflow_restored" does not exist, skipping
+E1027 18:35:18.521065   50714 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+    databases now:
+E1027 18:35:19.469930   50824 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+      supportflow
+      supportflow_restored
+
+[2026-10-27T18:35:19Z] ==> compare row counts and selected ticket IDs (live vs restored)
+E1027 18:35:19.602194   50858 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+E1027 18:35:19.734245   50893 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+E1027 18:35:19.867982   50925 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+    rows: live=2525 restored=2525 (difference = tickets created after the backup)
+E1027 18:35:20.053273   50958 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+E1027 18:35:20.054220   50959 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+[2026-10-27T18:35:20Z] PASS: selected ticket IDs (1 250 500 750 1000 2525) identical in live and restored (id, subject, description, priority, created_at)
+E1027 18:35:20.271078   51032 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+    restored: 1 | Synthetic ticket #1 | open
+    restored: 250 | Synthetic ticket #250 | closed
+    restored: 500 | Synthetic ticket #500 | open
+    restored: 750 | Synthetic ticket #750 | in_progress
+    restored: 1000 | Synthetic ticket #1000 | open
+    restored: 2525 | Load test ticket 19-29 | open
+
+[2026-10-27T18:35:20Z] ==> reconnect the staging API to the restored database
+    API DATABASE_URL now uses database: supportflow_restored
+Waiting for deployment "supportflow-api" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "supportflow-api" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "supportflow-api" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "supportflow-api" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "supportflow-api" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "supportflow-api" rollout to finish: 1 old replicas are pending termination...
+deployment "supportflow-api" successfully rolled out
+    API GET /tickets/1 -> 200  subject='Synthetic ticket #1' status=open
+    API GET /tickets/250 -> 200  subject='Synthetic ticket #250' status=closed
+    API GET /tickets/500 -> 200  subject='Synthetic ticket #500' status=open
+    API GET /tickets/750 -> 200  subject='Synthetic ticket #750' status=in_progress
+    API GET /tickets/1000 -> 200  subject='Synthetic ticket #1000' status=open
+    API GET /tickets/2525 -> 200  subject='Load test ticket 19-29' status=open
+    API /health/ready -> 200
+[2026-10-27T18:35:29Z] PASS: service running on the restored database; RTO = 12 s from recovery start (target <= 1800 s)
+
+[2026-10-27T18:35:29Z] ==> switch the API back to the original database (it was never touched)
+    API DATABASE_URL now uses database: supportflow
+Waiting for deployment "supportflow-api" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "supportflow-api" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "supportflow-api" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "supportflow-api" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "supportflow-api" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "supportflow-api" rollout to finish: 1 old replicas are pending termination...
+deployment "supportflow-api" successfully rolled out
+    API GET /tickets/1 -> 200  subject='Synthetic ticket #1' status=open
+    API GET /tickets/2525 -> 200  subject='Load test ticket 19-29' status=open
+    API /health/ready -> 200
+E1027 18:35:38.448696   52801 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+    restored copy supportflow_restored dropped
+E1027 18:35:38.703226   52886 v2.go:105] "Copying stdin failed" err="read /dev/stdin: bad file descriptor"
+    tickets in the original database: 2525 (at start: 2525)
+2026-10-27T18:35:38Z env=staging key=staging/supportflow-20261027T183011Z.dump backup_at=2026-10-27T18:30:13+00:00 rpo_s=303 rto_s=12 live=2525 restored=2525 ids_match=yes api_reconnected=yes
+
+DRILL 5 PASSED (started 2026-10-27T18:35:16Z)   finished 2026-10-27T18:35:38Z

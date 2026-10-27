@@ -1,0 +1,32 @@
+Drill 1: NetworkPolicy negative tests   started 2026-10-27T18:29:26Z
+NAMESPACE        NAME                              POD-SELECTOR                                                                                                AGE
+production-lab   postgres-allow-supportflow-only   app.kubernetes.io/name=postgres                                                                             25m
+production-lab   supportflow-api-allow-ingress     app.kubernetes.io/component=api,app.kubernetes.io/instance=supportflow,app.kubernetes.io/name=supportflow   25m
+staging          postgres-allow-supportflow-only   app.kubernetes.io/name=postgres                                                                             26m
+staging          supportflow-api-allow-ingress     app.kubernetes.io/component=api,app.kubernetes.io/instance=supportflow,app.kubernetes.io/name=supportflow   25m
+
+[2026-10-27T18:29:26Z] ==> A. allowed: staging API pod -> staging PostgreSQL :5432
+    result: postgres:5432 CONNECTED
+[2026-10-27T18:29:26Z] PASS: staging API -> staging postgres -> CONNECTED (as expected)
+
+[2026-10-27T18:29:26Z] ==> B. blocked: unlabelled pod in staging -> staging PostgreSQL :5432
+    result: postgres:5432 BLOCKED (ConnectionRefusedError)
+[2026-10-27T18:29:28Z] PASS: other pod in staging -> staging postgres -> BLOCKED (as expected)
+
+[2026-10-27T18:29:28Z] ==> C. blocked: pod in the default namespace -> staging PostgreSQL :5432
+    result: postgres.staging.svc.cluster.local:5432 BLOCKED (ConnectionRefusedError)
+[2026-10-27T18:29:30Z] PASS: default namespace -> staging postgres -> BLOCKED (as expected)
+
+[2026-10-27T18:29:30Z] ==> D. blocked: staging API pod -> production-lab PostgreSQL :5432 (cross-environment)
+    result: postgres.production-lab.svc.cluster.local:5432 BLOCKED (ConnectionRefusedError)
+[2026-10-27T18:29:31Z] PASS: staging API -> production-lab postgres -> BLOCKED (as expected)
+
+[2026-10-27T18:29:31Z] ==> E. blocked: pod in the default namespace -> staging API pod directly (10.42.0.50:8000)
+    result: 10.42.0.50:8000 BLOCKED (ConnectionRefusedError)
+[2026-10-27T18:29:33Z] PASS: default namespace -> staging API pod -> BLOCKED (as expected)
+
+[2026-10-27T18:29:33Z] ==> F. allowed: the monitoring namespace (Prometheus) -> staging API pod :8000
+    result: 10.42.0.50:8000 CONNECTED
+[2026-10-27T18:29:35Z] PASS: monitoring namespace -> staging API pod -> CONNECTED (as expected)
+
+DRILL 1 PASSED   finished 2026-10-27T18:29:35Z

@@ -13,8 +13,11 @@ Contents:
 6. Teardown (delete everything)
 7. Monitoring: open Grafana / Prometheus / Alertmanager, alert triage
 8. Database backup and restore
-9. Failure drills
+9. Failure drills (scripted, `scripts/drills/`)
 10. Not yet implemented
+11. Rotate the database password
+12. HTTPS certificates (Let's Encrypt via Traefik)
+13. Rebuild a lost host from the repository (disaster recovery / clean room)
 
 ---
 
@@ -38,11 +41,17 @@ Expected: `Apply complete! Resources: 6 added` and a bucket named
 ```bash
 cd ../platform
 terraform init -backend-config="bucket=$(terraform -chdir=../bootstrap output -raw state_bucket)"
-terraform plan -out=tfplan
+terraform plan -out=tfplan | tail -20
+# STOP. Read the "Plan:" line. Changes to an EXISTING platform must show
+# "0 to destroy" and no "must be replaced". Only then, as a separate step:
 terraform apply tfplan
-terraform output
+terraform output -raw instance_id; echo
 rm -f tfplan             # never commit saved plans
 ```
+Never paste `plan` and `apply` together (incident 2026-10-27). Rebuilding
+the host is a deliberate action: `terraform apply -replace=aws_instance.host`
+followed by runbook 13. Don't print the full `terraform output`: it shows the
+account number.
 Expected: about 25 resources added; outputs show `instance_id`, `public_ip`,
 `staging_url`, `production_lab_url`, `ecr_repository_url`,
 `github_actions_role_arn`.
@@ -61,7 +70,7 @@ sudo tail -5 /var/log/supportflow-bootstrap.log
 sudo k3s kubectl get nodes          # STATUS: Ready
 ```
 
-**Abort if:** the plan wants to *destroy* anything you did not expect, or
+**Abort if:** the plan wants to *destroy* or *replace* anything you did not expect, or
 `aws sts get-caller-identity` shows the root user or the wrong account.
 
 ---
@@ -108,7 +117,7 @@ the commit.
 
 **Validation (from your laptop):**
 ```bash
-python scripts/smoke_test.py --base-url http://staging.<ip-with-dashes>.sslip.io
+python scripts/smoke_test.py --base-url https://staging.<ip-with-dashes>.sslip.io
 ```
 Expected: `ALL CHECKS PASSED`.
 
@@ -158,6 +167,15 @@ helm -n <env> rollback supportflow <previous-revision> --wait --timeout 5m
 ```bash
 kubectl -n <env> exec statefulset/postgres -- psql -U supportflow -d supportflow -t -c "select count(*) from tickets;"
 ```
+**Rehearsed:** `sudo ./scripts/drills/04-bad-release-drill.sh` deploys a
+release whose readiness check fails, detects the failed rollout (`helm --wait`
+times out, the new pod never becomes Ready while the two old pods keep
+serving because `maxUnavailable: 0`), rolls back and checks the ticket count.
+Evidence: `docs/evidence/day11-review-fixes-drills.md`.
+
+**Escalate if:** the rollback itself does not become Ready within 5 minutes,
+or the ticket count dropped: stop deploying and use runbook 8.
+
 **Note:** rollback changes the *application* only. Migrations are additive,
 so the old version still runs against the new schema; the database is
 never rolled back by this procedure.
@@ -249,8 +267,8 @@ requests/s, 5xx/s, p95 latency, status codes).
 |---|---|---|
 | SupportFlowNoAvailablePods | 0 available API pods for 1 min | critical |
 | SupportFlowReplicasDegraded | fewer pods than desired for 5 min | warning |
-| SupportFlowDatabaseDown | PostgreSQL not ready for 2 min | critical |
-| SupportFlowHighErrorRate | > 5% of requests are 5xx for 5 min | critical |
+| SupportFlowDatabaseDown | PostgreSQL not ready for 1 min | critical |
+| SupportFlowHighErrorRate | > 5% of requests are 5xx over 2 min, sustained 2 min, only while traffic > 0.2 req/s (minimum-traffic rule) | critical |
 | SupportFlowHighLatencyP95 | p95 > 500 ms for 10 min | warning |
 
 **Triage:**
@@ -261,8 +279,16 @@ requests/s, 5xx/s, p95 latency, status codes).
 4. Recent release? `helm -n <env> history supportflow` -> roll back (runbook 5).
 5. Database? `kubectl -n <env> get pods -l app.kubernetes.io/name=postgres`.
 
-**Limitation:** Alertmanager has no notification receiver (no email/Slack
-configured); alerts are visible in Prometheus and Alertmanager only.
+**Notifications:** Alertmanager sends FIRING and RESOLVED notifications
+(timestamps, severity, namespace and a link to this runbook) to the local
+webhook collector `monitoring/alert-webhook.yaml` (lab only, nothing leaves
+the cluster). Read them on the host:
+```bash
+kubectl -n monitoring logs deploy/alert-webhook
+# received=2026-10-27T18:..Z status=FIRING alert=SupportFlowNoAvailablePods namespace=staging ... runbook=https://github.com/.../runbooks.md#7-...
+```
+Rehearsed by `scripts/drills/02-alert-notification-drill.sh` and
+`03-database-outage-drill.sh`.
 
 ---
 
@@ -299,6 +325,17 @@ database. Expected: `RESTORE VERIFIED`.
 
 **Abort if:** the drill does not print `RESTORE VERIFIED`.
 
+**Full recovery drill (fresh database + reconnect the API):**
+`sudo ./scripts/drills/05-restore-reconnect-drill.sh` restores the newest
+scheduled backup into a fresh database `supportflow_restored`, compares row
+counts and selected ticket IDs (field by field), points the staging API at the
+restored database, reads those tickets through the API, records RTO/RPO, then
+points the API back at the original database (which is never overwritten).
+
+**Host lost (database volume gone):** rebuild the host (runbook 13);
+`scripts/recover-db.sh <env>` loads the newest backup into the new, EMPTY
+database. It refuses to run if the database already has tickets.
+
 ---
 
 ## 9. Failure drills
@@ -309,10 +346,15 @@ database. Expected: `RESTORE VERIFIED`.
 | All API pods gone | `kubectl -n staging scale deploy/supportflow-api --replicas=0` | `SupportFlowNoAvailablePods` fires after ~1-2 min; scale back to 2 -> alert resolves |
 | Database pod killed | `kubectl -n staging delete pod postgres-0` | `/health/ready` returns 503 briefly, then 200; data intact (count unchanged) |
 | Bad release | see runbook 5 | release fails, old pods keep serving, rollback |
-| Load test (target 2.1) | laptop: `docker run --rm -i -u "$(id -u):$(id -g)" -e BASE_URL=http://staging.<ip-dashes>.sslip.io -v "$PWD/docs/evidence:/out" grafana/k6:1.8.1 run --quiet --summary-export=/out/day10-k6-summary.json - < load-tests/k6-tickets.js` | 10 min at 20 req/s; thresholds p95 < 500 ms and 5xx < 1% pass |
+| **Scripted drills (27 Oct)** | `sudo ./scripts/drills/run-all.sh` (all, ~30 min) or `run-all.sh 04` | 01 NetworkPolicy negative tests, 02 alert notification, 03 database outage, 04 bad release + rollback, 05 restore + reconnect, 06 credential rotation. Logs: `/var/log/supportflow/drills/`, copied to S3 `evidence/` |
+
+Run long jobs on the host with `nohup ... &` and watch with `tail -f`: a
+Session Manager session closes after ~20 minutes without output and stops
+anything running in the foreground.
+| Load test (target 2.1) | laptop: `docker run --rm -i -u "$(id -u):$(id -g)" -e BASE_URL=https://staging.<ip-dashes>.sslip.io -v "$PWD/docs/evidence:/out" grafana/k6:1.8.1 run --quiet --summary-export=/out/day10-k6-summary.json - < load-tests/k6-tickets.js` | 10 min at 20 req/s; thresholds p95 < 500 ms and 5xx < 1% pass |
 
 Uptime loop (laptop):
-`for i in $(seq 1 60); do curl -s -o /dev/null -w "%{http_code} " http://staging.<ip-dashes>.sslip.io/health/ready; sleep 2; done; echo`
+`for i in $(seq 1 60); do curl -s -o /dev/null -w "%{http_code} " https://staging.<ip-dashes>.sslip.io/health/ready; sleep 2; done; echo`
 
 ---
 
@@ -320,8 +362,77 @@ Uptime loop (laptop):
 
 | Item | Status |
 |---|---|
-| Alert notifications (email/Slack) | ❌ Not completed (alerts visible in UI only) |
+| GitOps (Argo CD) reconciliation and drift exercise | ❌ Not completed |
+| AWS Secrets Manager | ❌ Not completed: secrets are random values in Kubernetes Secrets, rotated by runbook 11 |
+| Reviewer-controlled production promotion gate | ❌ Not completed: needs the assessor's GitHub identity |
 | Off-host / cross-region backup copy | ❌ Not completed (single region bucket) |
-| Secret rotation | ⚠️ Partial: Grafana admin password rotation proven (runbook 7); DB password and AWS keys not rotated |
+| Alert notifications to email/Slack | 🟡 Local webhook collector only (allowed by the brief) |
 
 See `docs/acceptance-evidence.md` for the full requirement status.
+
+---
+
+## 11. Rotate the database password
+
+**Prerequisites:** host session (runbook 2), API healthy.
+```bash
+sudo ./scripts/drills/06-credential-rotation-drill.sh     # staging
+```
+What it does: generates a new random password, changes it in PostgreSQL
+(sent on stdin, never on a command line), updates the `supportflow-db`
+Secret (`postgres-password` + `database-url`), restarts the API, then proves
+from inside an API pod that the **new** credential connects and the **old**
+one is rejected (`password authentication failed`). Only 8-character SHA-256
+fingerprints are printed, never a value.
+
+**Validation:** `DRILL 6 PASSED`; `/health/ready` 200; ticket count unchanged.
+**Abort / escalate if:** the API does not become Ready after the restart:
+the Secret and the database disagree. Re-run the script (it reads the current
+Secret) or set the password back with `ALTER USER` from the Secret value.
+For production-lab, edit `NS=` in the script and run it in a quiet period.
+
+---
+
+## 12. HTTPS certificates (Let's Encrypt via Traefik)
+
+`sudo ./scripts/enable-https.sh` (also step 7 of `rebuild-host.sh`):
+1. upgrades both Helm releases so their Ingress serves only HTTPS
+   (`websecure`, certificate resolver `le`);
+2. applies `k8s/traefik-config.yaml`: Let's Encrypt HTTP-01 challenge on
+   port 80, certificates stored in `/data/acme.json` on a persistent volume,
+   every HTTP request redirected to HTTPS on 443;
+3. waits until `curl` (which verifies the certificate) gets 200 and prints
+   the issuer and expiry. Renewal is automatic (~30 days before expiry).
+
+**Check:** `echo | openssl s_client -connect staging.<ip-dashes>.sslip.io:443 -servername staging.<ip-dashes>.sslip.io 2>/dev/null | openssl x509 -noout -issuer -dates`
+**If the certificate stays self-signed:** `kubectl -n kube-system logs deploy/traefik | grep -i acme`.
+A failed order is retried only when Traefik's routes change: make sure only
+one Traefik pod is running, then
+`kubectl -n <env> annotate ingress supportflow-api traefik.ingress.kubernetes.io/router.priority=1001 --overwrite`.
+Never disable TLS verification to make a check pass.
+
+---
+
+## 13. Rebuild a lost host from the repository (disaster recovery / clean room)
+
+Used on 2026-10-27 after the host was replaced (`docs/incident-2026-10-27-host-replaced.md`).
+**Prerequisites:** Terraform applied (new instance running), images in ECR,
+backups in S3.
+```bash
+aws ssm start-session --target "$(terraform -chdir=infra/platform output -raw instance_id)"
+sudo -i
+git clone https://github.com/anoohya30/supportflow-platform.git /opt/supportflow
+cd /opt/supportflow
+nohup bash -c "scripts/rebuild-host.sh 2>&1 | sed -u -E 's/[0-9]{12}/<account>/g' > /var/log/supportflow-rebuild.log" >/dev/null 2>&1 &
+tail -f /var/log/supportflow-rebuild.log
+```
+Steps: wait for first boot (k3s, Helm) -> deploy both environments with the
+newest CI image digest -> load the newest backup into each new empty database
+-> monitoring + notifications -> 15-minute backup timer (only after the data
+is back, so an empty database is never the "latest backup") -> HTTPS.
+
+**Validation:** `RECOVERED <env>: N tickets`, `HTTPS ENABLED`,
+`REBUILD COMPLETE`; smoke test both URLs; run `scripts/drills/run-all.sh`.
+**Abort if:** `recover-db.sh` reports the database already has tickets
+(never overwrite a database with data) or the newest backup is older than expected.
+

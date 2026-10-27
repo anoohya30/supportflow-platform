@@ -306,3 +306,75 @@ Docker avoids installing k6.
 
 **Trade-off:** Results include the laptop's home network latency; a dedicated load
 generator in the same region would give cleaner numbers.
+
+---
+
+## D-021: HTTPS with Let's Encrypt through the built-in Traefik, on sslip.io names
+*Status: Accepted · 2026-10-27*
+
+**Decision:** Traefik (shipped with k3s) gets an ACME resolver `le` (HTTP-01
+challenge on port 80, certificates in `/data/acme.json` on a 128 Mi persistent
+volume) through a `HelmChartConfig` (`k8s/traefik-config.yaml`). The app
+Ingresses use only the `websecure` entry point, and port 80 redirects to 443.
+
+**Why:** The brief requires HTTPS with trusted certificates and automatic
+renewal, without buying a domain. sslip.io names resolve to the Elastic IP, so
+Let's Encrypt can validate them. Traefik already terminates traffic, so this
+needs no extra controller.
+
+**Trade-off:** HTTP-01 needs port 80 open. Certificates are tied to the IP-based
+name, so a new Elastic IP means new names and new certificates. cert-manager
+would give better visibility (Certificate objects, events) for the same
+result.
+
+---
+
+## D-022: Alert notifications to a local webhook collector
+*Status: Accepted · 2026-10-27*
+
+**Decision:** Alertmanager routes every SupportFlow alert to
+`alert-webhook.monitoring.svc:8080` (`monitoring/alert-webhook.yaml`) with
+`send_resolved: true`. A 40-line Python collector logs each FIRING and RESOLVED
+notification with timestamps, severity, namespace and the `runbook_url`.
+
+**Why:** The brief allows "an assessor-approved destination or a local
+webhook collector". The collector proves routing, grouping and resolution
+without sending data to an outside service or a personal inbox.
+
+**Trade-off:** Nobody is paged. Notifications are only seen when someone reads
+the collector log. A real service would add an on-call integration (email,
+Slack, PagerDuty) as a second receiver.
+
+---
+
+## D-023: The running host ignores new AMIs
+*Status: Accepted · 2026-10-27 (after incident 2026-10-27)*
+
+**Decision:** `aws_instance.host` has `lifecycle { ignore_changes = [ami] }`.
+Rebuilding the host on a newer image is a deliberate
+`terraform apply -replace=aws_instance.host` followed by runbook 13.
+
+**Why:** The AMI data source picks the newest Ubuntu image. Without this, an
+unrelated apply replaced the host and deleted its disk
+(`docs/incident-2026-10-27-host-replaced.md`).
+
+**Trade-off:** The host no longer gets new base images automatically. OS
+patching is a planned rebuild, which is now rehearsed and takes minutes.
+
+---
+
+## D-024: Database secrets stay in Kubernetes Secrets (AWS Secrets Manager not adopted)
+*Status: Accepted for the lab · 2026-10-27*
+
+**Decision:** Database passwords stay random values in the `supportflow-db`
+Kubernetes Secret, never in Git, and are rotated by runbook 11
+(`scripts/drills/06-credential-rotation-drill.sh`).
+
+**Why:** The brief asks for AWS Secrets Manager. Adding it means the External
+Secrets Operator plus an IAM path for pods. With the metadata hop limit of 1 (`infra/platform/host.tf`),
+pods deliberately cannot use the host role. This could not be completed safely
+in the time left, so it is reported as **not completed** rather than half-built.
+
+**Trade-off:** Secrets are only base64-encoded in the k3s datastore on the
+host disk, and rotation is a scripted manual step. Next step: Secrets Manager
++ External Secrets Operator with a dedicated, narrowly scoped credential.

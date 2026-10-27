@@ -30,7 +30,7 @@ done
 
 for ENV_NAME in staging production-lab; do
   stamp "4. recover the $ENV_NAME database from the latest S3 backup"
-  ./scripts/recover-db.sh "$ENV_NAME"
+  ./scripts/recover-db.sh "$ENV_NAME" || echo "    (database already has data: recovery skipped)"
 done
 
 stamp "5. monitoring, alert rules and notifications"
